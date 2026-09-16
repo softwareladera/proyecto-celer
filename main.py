@@ -1,6 +1,6 @@
 ﻿import flet as ft
 import os
-from flet import icons
+from flet import Icons
 import libsql
 import shutil
 from datetime import datetime
@@ -613,10 +613,10 @@ def vista_dashboard(page: ft.Page):
     fecha_fin_val = None
 
     # Contenedores visuales para las métricas (los declaramos arriba para poder actualizarlos)
-    txt_v = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK)
-    txt_e = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK)
-    txt_b = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK)
-    txt_a = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=ft.colors.BLACK)
+    txt_v = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK)
+    txt_e = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK)
+    txt_b = ft.Text("$0.00", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK)
+    txt_a = ft.Text("0", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLACK)
     lbl_alertas_msg = ft.Text("", size=14)
 
     def card_metrica(tit, component_txt, ico, col_ico):
@@ -625,7 +625,7 @@ def vista_dashboard(page: ft.Page):
                 ft.Column([
                     ft.ListTile(
                         leading=ft.Icon(ico, color=col_ico, size=35), 
-                        title=ft.Text(tit, size=13, color=ft.colors.GREY_700), 
+                        title=ft.Text(tit, size=13, color=ft.Colors.GREY_700), 
                         subtitle=component_txt
                     )
                 ]), 
@@ -643,16 +643,16 @@ def vista_dashboard(page: ft.Page):
         txt_v.value = f"${t_ventas:.2f}"
         txt_e.value = f"${t_egresos:.2f}"
         txt_b.value = f"${b_neto:.2f}"
-        txt_b.color = ft.colors.GREEN_700 if b_neto >= 0 else ft.colors.RED_700
+        txt_b.color = ft.Colors.GREEN_700 if b_neto >= 0 else ft.Colors.RED_700
         txt_a.value = str(p_alerta)
-        txt_a.color = ft.colors.RED_700 if p_alerta > 0 else ft.colors.GREEN_700
+        txt_a.color = ft.Colors.RED_700 if p_alerta > 0 else ft.Colors.GREEN_700
         
         lbl_alertas_msg.value = "• Alertas de Stock: " + (f"¡Atención! Tienes {p_alerta} producto(s) en mínimo físico." if p_alerta > 0 else "Inventario saludable.")
         page.update()
 
     # Botones de texto que muestran la fecha seleccionada
-    btn_fecha_ini = ft.TextButton("Seleccionar Inicio", icon=ft.icons.CALENDAR_MONTH)
-    btn_fecha_fin = ft.TextButton("Seleccionar Fin", icon=ft.icons.CALENDAR_MONTH)
+    btn_fecha_ini = ft.TextButton("Seleccionar Inicio", icon=ft.Icons.CALENDAR_MONTH)
+    btn_fecha_fin = ft.TextButton("Seleccionar Fin", icon=ft.Icons.CALENDAR_MONTH)
 
     # Componentes DatePicker (Calendarios)
     def cambiar_fecha_inicio(e):
@@ -698,15 +698,15 @@ def vista_dashboard(page: ft.Page):
         btn_fecha_fin.text = "Seleccionar Fin"
         refrescar_metricas()
 
-    btn_filtrar = ft.ElevatedButton("Filtrar", icon=ft.icons.FILTER_ALT, on_click=filtrar_click, bgcolor=ft.colors.BLUE, color=ft.colors.WHITE)
-    btn_limpiar = ft.IconButton(icon=ft.icons.REFRESH, on_click=limpiar_filtro_click, tooltip="Mostrar Histórico Total")
+    btn_filtrar = ft.ElevatedButton("Filtrar", icon=ft.Icons.FILTER_ALT, on_click=filtrar_click, bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
+    btn_limpiar = ft.IconButton(icon=ft.Icons.REFRESH, on_click=limpiar_filtro_click, tooltip="Mostrar Histórico Total")
 
     # Carga inicial de datos históricos globales
     refrescar_metricas()
 
     return ft.Column([
         ft.Text("📊 Tablero de Control / Finanzas", size=26, weight=ft.FontWeight.BOLD),
-        ft.Text("Resumen analítico de las finanzas. Filtra por rango para auditar periodos específicos.", size=14, color=ft.colors.GREY_700),
+        ft.Text("Resumen analítico de las finanzas. Filtra por rango para auditar periodos específicos.", size=14, color=ft.Colors.GREY_700),
         ft.Divider(),
         
         # Nueva Fila de Filtros de Fecha
@@ -720,30 +720,30 @@ def vista_dashboard(page: ft.Page):
                 btn_limpiar
             ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=10,
-            bgcolor=ft.colors.GREY_100,
+            bgcolor=ft.Colors.GREY_100,
             border_radius=8
         ),
         ft.Container(height=10),
         
         # Fila de Tarjetas de Métricas
         ft.Row([
-            card_metrica("Total Ventas", txt_v, ft.icons.ATTACH_MONEY, ft.colors.GREEN),
-            card_metrica("Total Egresos", txt_e, ft.icons.MONEY_OFF, ft.colors.RED_700),
-            card_metrica("Balance Neto", txt_b, ft.icons.ACCOUNT_BALANCE_WALLET, ft.colors.BLUE),
-            card_metrica("Productos Alerta", txt_a, ft.icons.WARNING_AMBER, ft.colors.ORANGE)
+            card_metrica("Total Ventas", txt_v, ft.Icons.ATTACH_MONEY, ft.Colors.GREEN),
+            card_metrica("Total Egresos", txt_e, ft.Icons.MONEY_OFF, ft.Colors.RED_700),
+            card_metrica("Balance Neto", txt_b, ft.Icons.ACCOUNT_BALANCE_WALLET, ft.Colors.BLUE),
+            card_metrica("Productos Alerta", txt_a, ft.Icons.WARNING_AMBER, ft.Colors.ORANGE)
         ], wrap=True, spacing=15),
         
  ft.Container(height=20),
         
         ft.Container(
             content=ft.Column([
-                ft.Row([ft.Icon(ft.icons.INFO_OUTLINE, color=ft.colors.BLUE_ACCENT), ft.Text("Estado de Alertas:", weight=ft.FontWeight.BOLD)]),
+                ft.Row([ft.Icon(ft.Icons.INFO_OUTLINE, color=ft.Colors.BLUE_ACCENT), ft.Text("Estado de Alertas:", weight=ft.FontWeight.BOLD)]),
                 lbl_alertas_msg
             ]), 
             padding=15, 
-            bgcolor=ft.colors.GREY_50, 
+            bgcolor=ft.Colors.GREY_50, 
             border_radius=8, 
-            border=ft.Border.all(1, ft.colors.GREY_300)
+            border=ft.Border.all(1, ft.Colors.GREY_300)
         )
     ], expand=True, scroll=ft.ScrollMode.ALWAYS) # <-- Este cierre ahora le pertenece a la Column principal de la vista
 
@@ -771,8 +771,8 @@ def vista_inventario(page: ft.Page):
         txt_stock.value = "0"
         txt_stock_min.value = "5"
         btn_guardar.content = ft.Text("Añadir")
-        btn_guardar.icon = ft.icons.ADD
-        btn_guardar.bgcolor = ft.colors.GREEN
+        btn_guardar.icon = ft.Icons.ADD
+        btn_guardar.bgcolor = ft.Colors.GREEN
         btn_cancelar.visible = False
         page.update()
 
@@ -786,7 +786,7 @@ def vista_inventario(page: ft.Page):
             
             precio_dolar = float(p_venta)
             p_venta_bs = precio_dolar * tasa
-            col_stock = ft.colors.RED_700 if en_alerta else ft.colors.GREEN_700
+            col_stock = ft.Colors.RED_700 if en_alerta else ft.Colors.GREEN_700
             
             id_actual = id_p
             nombre_actual = nombre
@@ -799,31 +799,31 @@ def vista_inventario(page: ft.Page):
                 ft.Card(
                     content=ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.icons.INVENTORY_2, color=col_stock, size=24),
+                            ft.Icon(ft.Icons.INVENTORY_2, color=col_stock, size=24),
                             ft.Column([
                                 ft.Text(str(nombre), weight=ft.FontWeight.BOLD, size=14),
-                                ft.Text(f"Costo: ${pc_actual:.2f} | Mín: {sm_actual}", size=11, color=ft.colors.GREY_600)
+                                ft.Text(f"Costo: ${pc_actual:.2f} | Mín: {sm_actual}", size=11, color=ft.Colors.GREY_600)
                             ], spacing=2, expand=True),
                             ft.Column([
-                                ft.Text(f"${pv_actual:.2f}", weight=ft.FontWeight.BOLD, size=14, color=ft.colors.BLUE_900),
-                                ft.Text(f"{p_venta_bs:.1f} Bs.", size=11, color=ft.colors.GREY_700)
+                                ft.Text(f"${pv_actual:.2f}", weight=ft.FontWeight.BOLD, size=14, color=ft.Colors.BLUE_900),
+                                ft.Text(f"{p_venta_bs:.1f} Bs.", size=11, color=ft.Colors.GREY_700)
                             ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
                             ft.Row([
                                 ft.IconButton(
-                                    icon=ft.icons.EDIT,
-                                    icon_color=ft.colors.BLUE_500,
+                                    icon=ft.Icons.EDIT,
+                                    icon_color=ft.Colors.BLUE_500,
                                     icon_size=18,
                                     on_click=lambda e, idx=id_actual, n=nombre_actual, pc=pc_actual, pv=pv_actual, s=st_actual, sm=sm_actual: preparar_edicion(idx, n, pc, pv, s, sm)
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.DELETE,
-                                    icon_color=ft.colors.RED_500,
+                                    icon=ft.Icons.DELETE,
+                                    icon_color=ft.Colors.RED_500,
                                     icon_size=18,
                                     on_click=lambda e, idx=id_actual, n=nombre_actual: abrir_confirmacion_borrado(idx, n)
                                 )
                             ], spacing=0, alignment=ft.MainAxisAlignment.END),
                             ft.Container(
-                                content=ft.Text(str(stock), color=ft.colors.WHITE, size=11, weight=ft.FontWeight.BOLD),
+                                content=ft.Text(str(stock), color=ft.Colors.WHITE, size=11, weight=ft.FontWeight.BOLD),
                                 bgcolor=col_stock,
                                 padding=ft.Padding(8, 4, 8, 4), 
                                 border_radius=12,
@@ -846,8 +846,8 @@ def vista_inventario(page: ft.Page):
         txt_stock.value = str(stock)
         txt_stock_min.value = str(stock_min)
         btn_guardar.content = ft.Text("Actualizar")
-        btn_guardar.icon = ft.icons.SAVE
-        btn_guardar.bgcolor = ft.colors.BLUE_800
+        btn_guardar.icon = ft.Icons.SAVE
+        btn_guardar.bgcolor = ft.Colors.BLUE_800
         btn_cancelar.visible = True
         page.update()
 
@@ -868,7 +868,7 @@ def vista_inventario(page: ft.Page):
             content=ft.Text(f"¿De verdad deseas borrar '{nombre_p}' del inventario?"),
             actions=[
                 ft.TextButton("Cancelar", on_click=cancelar),
-                ft.ElevatedButton(content=ft.Text("Eliminar"), bgcolor=ft.colors.RED, color=ft.colors.WHITE, on_click=confirmar),
+                ft.ElevatedButton(content=ft.Text("Eliminar"), bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=confirmar),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -900,10 +900,10 @@ def vista_inventario(page: ft.Page):
 
     btn_guardar = ft.ElevatedButton(
         content=ft.Text("Añadir"), 
-        icon=ft.icons.ADD, 
+        icon=ft.Icons.ADD, 
         on_click=guardar_click, 
-        bgcolor=ft.colors.GREEN, 
-        color=ft.colors.WHITE, 
+        bgcolor=ft.Colors.GREEN, 
+        color=ft.Colors.WHITE, 
         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
     )
     btn_cancelar = ft.TextButton("Cancelar", on_click=lambda e: limpiar_campos(), visible=False)
@@ -911,8 +911,8 @@ def vista_inventario(page: ft.Page):
     actualizar()
 
     page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.icons.LOCAL_SHIPPING,
-        bgcolor=ft.colors.GREEN_700,
+        icon=ft.Icons.LOCAL_SHIPPING,
+        bgcolor=ft.Colors.GREEN_700,
         tooltip="Despachar Vasos a Puestos",
         on_click=lambda e: abrir_modal_puestos_separado(page, al_cerrar=actualizar)
     )
@@ -958,17 +958,17 @@ def abrir_modal_puestos_separado(page: ft.Page, al_cerrar=None):
         try:
             existencias = db_obtener_stock_actual_vendedores()
             if not existencias:
-                lista_existencias_vendedores.controls.append(ft.Text("No hay vasos asignados a puestos.", size=12, color=ft.colors.GREY_500, italic=True))
+                lista_existencias_vendedores.controls.append(ft.Text("No hay vasos asignados a puestos.", size=12, color=ft.Colors.GREY_500, italic=True))
             else:
                 for ex in existencias:
                     vendedor_puesto, nombre_vaso, cantidad_asignada = ex
-                    color_alerta = ft.colors.ORANGE_700 if cantidad_asignada <= 5 else ft.colors.BLUE_GREY_700
+                    color_alerta = ft.Colors.ORANGE_700 if cantidad_asignada <= 5 else ft.Colors.BLUE_GREY_700
                     if cantidad_asignada <= 0:
-                        color_alerta = ft.colors.RED_700
+                        color_alerta = ft.Colors.RED_700
                     lista_existencias_vendedores.controls.append(
                         ft.Row([
                             ft.Row([
-                                ft.Icon(ft.icons.HOME, color=ft.colors.BLUE_700, size=16),
+                                ft.Icon(ft.Icons.HOME, color=ft.Colors.BLUE_700, size=16),
                                 ft.Text(f"{str(vendedor_puesto).upper()} - {nombre_vaso}", size=12)
                             ], spacing=5),
                             ft.Text(f"{cantidad_asignada} und.", weight=ft.FontWeight.BOLD, size=12, color=color_alerta)
@@ -1002,23 +1002,23 @@ def abrir_modal_puestos_separado(page: ft.Page, al_cerrar=None):
 
     dialogo_asignacion = ft.AlertDialog(
         title=ft.Row([
-            ft.Icon(ft.icons.LOCAL_SHIPPING, color=ft.colors.GREEN_700),
+            ft.Icon(ft.Icons.LOCAL_SHIPPING, color=ft.Colors.GREEN_700),
             ft.Text("Despachar a Puestos", size=16, weight=ft.FontWeight.BOLD)
         ], spacing=8),
         content=ft.Column([
-            ft.Text("Transferir desde Almacén:", size=11, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_ACCENT_700),
+            ft.Text("Transferir desde Almacén:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_ACCENT_700),
             ft.Row([dropdown_vendedor, txt_cantidad], spacing=5),
             dropdown_vaso,
             ft.ElevatedButton(
                 content=ft.Text("Confirmar Entrega"),
-                icon=ft.icons.ADD,
-                bgcolor=ft.colors.GREEN_700,
-                color=ft.colors.WHITE,
+                icon=ft.Icons.ADD,
+                bgcolor=ft.Colors.GREEN_700,
+                color=ft.Colors.WHITE,
                 width=300,
                 on_click=ejecutar_traslado_click
             ),
             ft.Divider(height=15),
-            ft.Text("Vasos activos en la calle:", size=11, weight=ft.FontWeight.BOLD, color=ft.colors.GREY_700),
+            ft.Text("Vasos activos en la calle:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
             lista_existencias_vendedores
         ], tight=True, width=320, spacing=8),
         actions=[
@@ -1059,7 +1059,7 @@ def vista_ventas(page: ft.Page):
     )
     
     lista_carrito = ft.ListView(expand=True, spacing=4) 
-    lbl_total = ft.Text("Total: $0.00 (0.00 Bs.)", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.GREEN_700)
+    lbl_total = ft.Text("Total: $0.00 (0.00 Bs.)", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700)
     
     dd_metodo = ft.Dropdown(
         label="Pago", 
@@ -1085,17 +1085,17 @@ def vista_ventas(page: ft.Page):
             lista_carrito.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Text(f"{cantidad_unidades}x", weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_800),
+                        ft.Text(f"{cantidad_unidades}x", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_800),
                         ft.Text(str(art[1]), expand=True, size=16), 
                         ft.Text(f"${subtotal_renglon:.2f}", size=16, weight=ft.FontWeight.BOLD),
                         ft.IconButton(
-                            icon=ft.icons.REMOVE_CIRCLE_OUTLINE, 
-                            icon_color=ft.colors.RED_400, 
+                            icon=ft.Icons.REMOVE_CIRCLE_OUTLINE, 
+                            icon_color=ft.Colors.RED_400, 
                             icon_size=18, 
                             on_click=lambda e, i=id_actual: quitar(i)
                         )
                     ]),
-                    padding=6, bgcolor=ft.colors.GREY_50, border_radius=6
+                    padding=6, bgcolor=ft.Colors.GREY_50, border_radius=6
                 )
             )
         total_bs = total_acumulado * tasa
@@ -1137,10 +1137,10 @@ def vista_ventas(page: ft.Page):
                         border_radius=8,
                         padding=6,
                         content=ft.Column([
-                            ft.Icon(ft.icons.LOCAL_DRINK, color=ft.colors.BLUE_500, size=24),
+                            ft.Icon(ft.Icons.LOCAL_DRINK, color=ft.Colors.BLUE_500, size=24),
                             ft.Text(nombre, weight=ft.FontWeight.BOLD, size=12, text_align=ft.TextAlign.CENTER, max_lines=1),
-                            ft.Text(f"${float(p_venta):.2f}", size=11, color=ft.colors.GREEN_700, weight=ft.FontWeight.W_600),
-                            ft.Text(f"{precio_bs:.1f} Bs.", size=9, color=ft.colors.GREY_600),
+                            ft.Text(f"${float(p_venta):.2f}", size=11, color=ft.Colors.GREEN_700, weight=ft.FontWeight.W_600),
+                            ft.Text(f"{precio_bs:.1f} Bs.", size=9, color=ft.Colors.GREY_600),
                         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2)
                     ),
                     elevation=2
@@ -1198,7 +1198,7 @@ def vista_ventas(page: ft.Page):
                 ], tight=True, spacing=10),
                 actions=[
                     ft.TextButton("Cancelar", on_click=lambda _: [page.overlay.remove(dialogo_pm), page.update()]),
-                    ft.ElevatedButton("Guardar Venta", bgcolor=ft.colors.GREEN_700, color=ft.colors.WHITE, on_click=guardar_con_referencia)
+                    ft.ElevatedButton("Guardar Venta", bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE, on_click=guardar_con_referencia)
                 ],
                 actions_alignment=ft.MainAxisAlignment.END,
             )
@@ -1210,9 +1210,9 @@ def vista_ventas(page: ft.Page):
 
     btn_pagar = ft.ElevatedButton(
         "Cobrar Venta", 
-        icon=ft.icons.CHECK, 
-        bgcolor=ft.colors.GREEN_700, 
-        color=ft.colors.WHITE, 
+        icon=ft.Icons.CHECK, 
+        bgcolor=ft.Colors.GREEN_700, 
+        color=ft.Colors.WHITE, 
         on_click=procesar_venta, 
         expand=True
     )
@@ -1221,9 +1221,9 @@ def vista_ventas(page: ft.Page):
     render_carrito()
 
     return ft.Column([
-        ft.Text("🥤 LA RICA CHICHA DE CARACAS ", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_800),
+        ft.Text("🥤 LA RICA CHICHA DE CARACAS ", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
         cuadricula_productos,
-        ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_700),
+        ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_700),
         lista_carrito,
         ft.Divider(height=5),
         ft.Row([
@@ -1255,8 +1255,8 @@ def vista_caja(page: ft.Page):
         if page.width < 600:
             for m in movimientos:
                 es_ingreso = m[1] == "INGRESO"
-                color_tipo = ft.colors.GREEN if es_ingreso else ft.colors.RED
-                icono_tipo = ft.icons.ARROW_UPWARD if es_ingreso else ft.icons.ARROW_DOWNWARD
+                color_tipo = ft.Colors.GREEN if es_ingreso else ft.Colors.RED
+                icono_tipo = ft.Icons.ARROW_UPWARD if es_ingreso else ft.Icons.ARROW_DOWNWARD
 
                 contenedor_datos.controls.append(
                     ft.Card(
@@ -1271,8 +1271,8 @@ def vista_caja(page: ft.Page):
                                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                                 ft.Divider(height=5, thickness=0.5),
                                 ft.Text(f"Categoría: {m[2]}", size=14, weight=ft.FontWeight.W_500),
-                                ft.Text(f"Nota: {m[3] if m[3] else '-'}", size=13, color=ft.colors.GREY_600),
-                                ft.Text(str(m[0]), size=11, color=ft.colors.GREY_400, text_align=ft.TextAlign.RIGHT),
+                                ft.Text(f"Nota: {m[3] if m[3] else '-'}", size=13, color=ft.Colors.GREY_600),
+                                ft.Text(str(m[0]), size=11, color=ft.Colors.GREY_400, text_align=ft.TextAlign.RIGHT),
                             ], spacing=4),
                             padding=12
                         )
@@ -1290,7 +1290,7 @@ def vista_caja(page: ft.Page):
                 ]
             )
             for m in movimientos:
-                col_t = ft.colors.GREEN if m[1] == "INGRESO" else ft.colors.RED
+                col_t = ft.Colors.GREEN if m[1] == "INGRESO" else ft.Colors.RED
                 tabla_movs.rows.append(ft.DataRow(cells=[
                     ft.DataCell(ft.Text(str(m[0]))), 
                     ft.DataCell(ft.Text(str(m[1]), color=col_t, weight=ft.FontWeight.BOLD)), 
@@ -1327,8 +1327,8 @@ def vista_caja(page: ft.Page):
     btn_registrar = ft.ElevatedButton(
         "Registrar Movimiento", 
         on_click=registrar_movimiento, 
-        bgcolor=ft.colors.BLUE, 
-        color=ft.colors.WHITE
+        bgcolor=ft.Colors.BLUE, 
+        color=ft.Colors.WHITE
     )
 
     page.on_resize = lambda e: cargar_movimientos()
@@ -1383,7 +1383,7 @@ def vista_historial_ventas(page: ft.Page):
             
         if not articulos:
             columna_productos.controls.append(
-                ft.Text("⚠ No se encontraron artículos.", size=12, color=ft.colors.RED_700, italic=True)
+                ft.Text("⚠ No se encontraron artículos.", size=12, color=ft.Colors.RED_700, italic=True)
             )
         else:
             for art in articulos:
@@ -1392,8 +1392,8 @@ def vista_historial_ventas(page: ft.Page):
                     sub = cantidad * precio_u
                     columna_productos.controls.append(
                         ft.Row([
-                            ft.Text(f"• {cantidad}x {nombre_p}", size=12, color=ft.colors.BLUE_GREY_700, expand=True),
-                            ft.Text(f"${sub:.2f}", size=12, weight=ft.FontWeight.W_500, color=ft.colors.BLUE_GREY_900)
+                            ft.Text(f"• {cantidad}x {nombre_p}", size=12, color=ft.Colors.BLUE_GREY_700, expand=True),
+                            ft.Text(f"${sub:.2f}", size=12, weight=ft.FontWeight.W_500, color=ft.Colors.BLUE_GREY_900)
                         ])
                     )
                 except Exception:
@@ -1401,8 +1401,8 @@ def vista_historial_ventas(page: ft.Page):
         
         contenedor_detalle = ft.Container(
             content=ft.Column([
-                ft.Divider(height=10, thickness=1, color=ft.colors.GREY_300),
-                ft.Text("Artículos Facturados:", size=11, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_ACCENT_700),
+                ft.Divider(height=10, thickness=1, color=ft.Colors.GREY_300),
+                ft.Text("Artículos Facturados:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_ACCENT_700),
                 columna_productos
             ]),
             visible=False,
@@ -1412,7 +1412,7 @@ def vista_historial_ventas(page: ft.Page):
         def conmutar_detalle(e):
             contenedor_detalle.visible = not contenedor_detalle.visible
             try:
-                e.control.icon = ft.icons.KEYBOARD_ARROW_UP if contenedor_detalle.visible else ft.icons.INFO
+                e.control.icon = ft.Icons.KEYBOARD_ARROW_UP if contenedor_detalle.visible else ft.Icons.INFO
             except Exception:
                 pass
             page.update()
@@ -1420,7 +1420,7 @@ def vista_historial_ventas(page: ft.Page):
         # 2. USAREMOS UN CHECKBOX NATIVO QUE ES 100% SEGURO Y NO SE ROMPE
         chk_banco = ft.Checkbox(
             value=True if conciliado_inicial == 1 else False,
-            fill_color=ft.colors.GREEN_600,
+            fill_color=ft.Colors.GREEN_600,
         )
 
         def cambiar_estado_checkbox(e):
@@ -1444,7 +1444,7 @@ def vista_historial_ventas(page: ft.Page):
                     content=ft.Text(f"¿Deseas quitar la verificación del Folio {folio_str}? Volverá a marcarse como pendiente en el banco."),
                     actions=[
                         ft.TextButton("Cancelar", on_click=cancelar_destildar),
-                        ft.ElevatedButton("Sí, quitar", bgcolor=ft.colors.RED_600, color=ft.colors.WHITE, on_click=confirmar_destildar)
+                        ft.ElevatedButton("Sí, quitar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_destildar)
                     ],
                     actions_alignment=ft.MainAxisAlignment.END
                 )
@@ -1469,20 +1469,20 @@ def vista_historial_ventas(page: ft.Page):
                 content=ft.Column([
                     ft.Row([
                         chk_banco,  # Tu control de banco seguro aquí
-                        ft.Icon(ft.icons.RECEIPT, color=ft.colors.BLUE_GREY, size=22),
+                        ft.Icon(ft.Icons.RECEIPT, color=ft.Colors.BLUE_GREY, size=22),
                         ft.Column([
                             ft.Text(f"Folio {folio_str} - {texto_metodo}", weight=ft.FontWeight.BOLD, size=13),
-                            ft.Text(f"Atendido por: {vendedor_ticket}", size=11, color=ft.colors.BLUE_GREY_500, weight=ft.FontWeight.W_500),
-                            ft.Text(str(fecha_venta), size=10, color=ft.colors.GREY_600)
+                            ft.Text(f"Atendido por: {vendedor_ticket}", size=11, color=ft.Colors.BLUE_GREY_500, weight=ft.FontWeight.W_500),
+                            ft.Text(str(fecha_venta), size=10, color=ft.Colors.GREY_600)
                         ], spacing=1, expand=True),
                         ft.Column([
-                            ft.Text(f"${total_float:.2f}", weight=ft.FontWeight.BOLD, size=13, color=ft.colors.GREEN_700),
-                            ft.Text(f"{total_bs:.1f} Bs.", size=11, color=ft.colors.BLUE_900)
+                            ft.Text(f"${total_float:.2f}", weight=ft.FontWeight.BOLD, size=13, color=ft.Colors.GREEN_700),
+                            ft.Text(f"{total_bs:.1f} Bs.", size=11, color=ft.Colors.BLUE_900)
                         ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=1),
                         ft.IconButton(
-                            icon=ft.icons.INFO, 
+                            icon=ft.Icons.INFO, 
                             icon_size=20, 
-                            icon_color=ft.colors.BLUE,
+                            icon_color=ft.Colors.BLUE,
                             on_click=conmutar_detalle
                         )
                     ]),
@@ -1647,7 +1647,7 @@ def vista_historial_ventas(page: ft.Page):
         filas_vendedores_ui = []
         if not reporte_sumas:
             filas_vendedores_ui.append(
-                ft.Text("No hay registros visibles para sumar.", color=ft.colors.GREY_600, italic=True)
+                ft.Text("No hay registros visibles para sumar.", color=ft.Colors.GREY_600, italic=True)
             )
         else:
             for vend, total_usd in reporte_sumas.items():
@@ -1655,14 +1655,14 @@ def vista_historial_ventas(page: ft.Page):
                     ft.Container(
                         content=ft.Row([
                             ft.Row([
-                                ft.Icon(ft.icons.ACCOUNT_CIRCLE, color=ft.colors.BLUE_400),
+                                ft.Icon(ft.Icons.ACCOUNT_CIRCLE, color=ft.Colors.BLUE_400),
                                 ft.Text(f"{vend}", weight=ft.FontWeight.BOLD, size=13)
                             ], spacing=8),
-                            ft.Text(f"${total_usd:.2f}", color=ft.colors.GREEN_700, weight=ft.FontWeight.BOLD, size=14)
+                            ft.Text(f"${total_usd:.2f}", color=ft.Colors.GREEN_700, weight=ft.FontWeight.BOLD, size=14)
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         # SOLUCIÓN AL ERROR: Sintaxis compatible con todas las versiones de Flet
                         padding=ft.Padding(10, 6, 10, 6),
-                        border=ft.Border(bottom=ft.BorderSide(1, ft.colors.GREY_200))
+                        border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.GREY_200))
                     )
                 )
 
@@ -1670,7 +1670,7 @@ def vista_historial_ventas(page: ft.Page):
         # Configuramos y construimos el AlertDialog flotante
         dialogo_reporte = ft.AlertDialog(
             title=ft.Row([
-                ft.Icon(ft.icons.ASSESSMENT_ROUNDED, color=ft.colors.GREEN_700),
+                ft.Icon(ft.Icons.ASSESSMENT_ROUNDED, color=ft.Colors.GREEN_700),
                 ft.Text("Sumatoria de Ventas ($)", size=16, weight=ft.FontWeight.BOLD)
             ], spacing=10),
             content=ft.Column(
@@ -1696,8 +1696,8 @@ def vista_historial_ventas(page: ft.Page):
 
     # Botón tipo Icono para abrir el reporte sumado en $
     btn_reporte = ft.IconButton(
-        icon=ft.icons.BAR_CHART_ROUNDED,
-        icon_color=ft.colors.GREEN_700,
+        icon=ft.Icons.BAR_CHART_ROUNDED,
+        icon_color=ft.Colors.GREEN_700,
         tooltip="Ver totales por vendedor",
         on_click=mostrar_reporte_vendedores_click
     )
@@ -1762,17 +1762,17 @@ def abrir_modal_usuarios(page: ft.Page):
                     content=ft.Container(
                         content=ft.Row([
                             ft.Icon(
-                                ft.icons.ACCOUNT_CIRCLE if rol == "master" else ft.icons.SUPPORT_AGENT, 
-                                color=ft.colors.BLUE_800 if rol == "master" else ft.colors.BLUE_GREY_600
+                                ft.Icons.ACCOUNT_CIRCLE if rol == "master" else ft.Icons.SUPPORT_AGENT, 
+                                color=ft.Colors.BLUE_800 if rol == "master" else ft.Colors.BLUE_GREY_600
                             ),
                             ft.Column([
                                 ft.Text(username.upper(), weight=ft.FontWeight.BOLD, size=13),
-                                ft.Text(f"Rol: {rol.upper()}", size=10, color=ft.colors.GREY_600)
+                                ft.Text(f"Rol: {rol.upper()}", size=10, color=ft.Colors.GREY_600)
                             ], spacing=1, expand=True),
                             
                             ft.IconButton(
-                                icon=ft.icons.DELETE_OUTLINE,
-                                icon_color=ft.colors.RED_400,
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_color=ft.Colors.RED_400,
                                 icon_size=18,
                                 visible=puede_borrar,
                                 on_click=lambda e, idx=id_actual, nom=name_actual: ejecutar_baja(idx, nom)
@@ -1803,10 +1803,10 @@ def abrir_modal_usuarios(page: ft.Page):
 
     btn_crear = ft.ElevatedButton(
         "Registrar", 
-        icon=ft.icons.PERSON_ADD, 
+        icon=ft.Icons.PERSON_ADD, 
         on_click=registrar_usuario_click,
-        bgcolor=ft.colors.GREEN_700,
-        color=ft.colors.WHITE
+        bgcolor=ft.Colors.GREEN_700,
+        color=ft.Colors.WHITE
     )
 
     refrescar_lista_usuarios()
@@ -1817,7 +1817,7 @@ def abrir_modal_usuarios(page: ft.Page):
             content=ft.Column([
                 ft.Row([
                     ft.Text("👥 Control de Personal y Accesos", size=16, weight=ft.FontWeight.BOLD),
-                    ft.IconButton(ft.icons.CLOSE, on_click=lambda e: cerrar_modal())
+                    ft.IconButton(ft.Icons.CLOSE, on_click=lambda e: cerrar_modal())
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Divider(height=5),
                 txt_new_user,
@@ -1825,7 +1825,7 @@ def abrir_modal_usuarios(page: ft.Page):
                 dd_rol,
                 ft.Row([btn_crear], alignment=ft.MainAxisAlignment.END),
                 ft.Divider(height=5),
-                ft.Text("Plantilla Activa:", size=12, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_700),
+                ft.Text("Plantilla Activa:", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_700),
                 lista_personal
             ], spacing=10, scroll=ft.ScrollMode.AUTO),
             padding=20,
@@ -1863,28 +1863,28 @@ def vista_configuracion(page: ft.Page):
             valor = float(tasa_texto)
             if valor <= 0:
                 lbl_status.value = "Error: La tasa debe ser mayor a 0."
-                lbl_status.color = ft.colors.RED
+                lbl_status.color = ft.Colors.RED
             else:
                 db_actualizar_tasa_dolar(valor)
                 lbl_status.value = f"¡Tasa actualizada con éxito a {valor:.2f} Bs.!"
-                lbl_status.color = ft.colors.GREEN_700
+                lbl_status.color = ft.Colors.GREEN_700
                 txt_tasa.value = f"{valor:.2f}"
         except ValueError:
             lbl_status.value = "Error: Ingresa un número decimal válido."
-            lbl_status.color = ft.colors.RED
+            lbl_status.color = ft.Colors.RED
         page.update()
 
     btn_guardar_tasa = ft.ElevatedButton(
         "Actualizar Tasa", 
-        icon=ft.icons.SAVE, 
+        icon=ft.Icons.SAVE, 
         on_click=guardar_tasa_click,
-        bgcolor=ft.colors.BLUE_800,
-        color=ft.colors.WHITE
+        bgcolor=ft.Colors.BLUE_800,
+        color=ft.Colors.WHITE
     )
 
     return ft.Column([
         ft.Text("⚙ Panel de Configuración", size=26, weight=ft.FontWeight.BOLD),
-        ft.Text("Define los parámetros del sistema y conversión monetaria.", size=14, color=ft.colors.GREY_700),
+        ft.Text("Define los parámetros del sistema y conversión monetaria.", size=14, color=ft.Colors.GREY_700),
         ft.Divider(),
         ft.Container(height=5),
         
@@ -1893,7 +1893,7 @@ def vista_configuracion(page: ft.Page):
             ft.Container(
                 content=ft.Column([
                     ft.Text("Ajuste de Moneda (Venezuela)", weight=ft.FontWeight.BOLD, size=16),
-                    ft.Text("Los precios de ventas e inventarios se calcularán usando este valor.", size=12, color=ft.colors.GREY_600),
+                    ft.Text("Los precios de ventas e inventarios se calcularán usando este valor.", size=12, color=ft.Colors.GREY_600),
                     ft.Container(height=5),
                     ft.Row([txt_tasa, btn_guardar_tasa], alignment=ft.MainAxisAlignment.START, spacing=15, wrap=True),
                     lbl_status
@@ -1910,13 +1910,13 @@ def vista_configuracion(page: ft.Page):
             ft.Container(
                 content=ft.Column([
                     ft.Text("Seguridad y Empleados", weight=ft.FontWeight.BOLD, size=16),
-                    ft.Text("Crea nuevos perfiles para tus vendedores o da de baja cuentas existentes.", size=12, color=ft.colors.GREY_600),
+                    ft.Text("Crea nuevos perfiles para tus vendedores o da de baja cuentas existentes.", size=12, color=ft.Colors.GREY_600),
                     ft.Container(height=5),
                     ft.ElevatedButton(
                         "Administrar Personal",
-                        icon=ft.icons.MANAGE_ACCOUNTS,
-                        bgcolor=ft.colors.BLUE_GREY_800,
-                        color=ft.colors.WHITE,
+                        icon=ft.Icons.MANAGE_ACCOUNTS,
+                        bgcolor=ft.Colors.BLUE_GREY_800,
+                        color=ft.Colors.WHITE,
                         on_click=lambda e: abrir_modal_usuarios(page) # Llama a la ventana flotante
                     )
                 ]),
@@ -1957,15 +1957,15 @@ def main(page: ft.Page):
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=85,
         min_extended_width=200,
-        leading=ft.Icon(ft.icons.HOME, size=35, color=ft.colors.BLUE_800),
+        leading=ft.Icon(ft.Icons.HOME, size=35, color=ft.Colors.BLUE_800),
         visible=False,
         destinations=[
-            ft.NavigationRailDestination(icon=ft.icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.icons.POINT_OF_SALE, label="Ventas"),
-            ft.NavigationRailDestination(icon=ft.icons.DASHBOARD_OUTLINED, selected_icon=ft.icons.DASHBOARD, label="Finanzas"),
-            ft.NavigationRailDestination(icon=ft.icons.INVENTORY_2_OUTLINED, selected_icon=ft.icons.INVENTORY_2, label="Inventario"),
-            ft.NavigationRailDestination(icon=ft.icons.ATTACH_MONEY_OUTLINED, selected_icon=ft.icons.ATTACH_MONEY, label="Caja"),
-            ft.NavigationRailDestination(icon=ft.icons.HISTORY_OUTLINED, selected_icon=ft.icons.HISTORY, label="Historial"),
-            ft.NavigationRailDestination(icon=ft.icons.SETTINGS_OUTLINED, selected_icon=ft.icons.SETTINGS, label="Config."),
+            ft.NavigationRailDestination(icon=ft.Icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.Icons.POINT_OF_SALE, label="Ventas"),
+            ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label="Finanzas"),
+            ft.NavigationRailDestination(icon=ft.Icons.INVENTORY_2_OUTLINED, selected_icon=ft.Icons.INVENTORY_2, label="Inventario"),
+            ft.NavigationRailDestination(icon=ft.Icons.ATTACH_MONEY_OUTLINED, selected_icon=ft.Icons.ATTACH_MONEY, label="Caja"),
+            ft.NavigationRailDestination(icon=ft.Icons.HISTORY_OUTLINED, selected_icon=ft.Icons.HISTORY, label="Historial"),
+            ft.NavigationRailDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="Config."),
         ],
     )
 
@@ -1974,12 +1974,12 @@ def main(page: ft.Page):
         visible=False,
         height=65,
         destinations=[
-            ft.NavigationDestination(icon=ft.icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.icons.POINT_OF_SALE, label="Ventas"),
-            ft.NavigationDestination(icon=ft.icons.DASHBOARD_OUTLINED, selected_icon=ft.icons.DASHBOARD, label="Finanzas"),
-            ft.NavigationDestination(icon=ft.icons.INVENTORY_2_OUTLINED, selected_icon=ft.icons.INVENTORY_2, label="Inventario"),
-            ft.NavigationDestination(icon=ft.icons.ATTACH_MONEY_OUTLINED, selected_icon=ft.icons.ATTACH_MONEY, label="Caja"),
-            ft.NavigationDestination(icon=ft.icons.HISTORY_OUTLINED, selected_icon=ft.icons.HISTORY, label="Historial"),
-            ft.NavigationDestination(icon=ft.icons.SETTINGS_OUTLINED, selected_icon=ft.icons.SETTINGS, label="Config."),
+            ft.NavigationBarDestination(icon=ft.Icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.Icons.POINT_OF_SALE, label="Ventas"),
+            ft.NavigationBarDestination(icon=ft.Icons.DASHBOARD_OUTLINED, selected_icon=ft.Icons.DASHBOARD, label="Finanzas"),
+            ft.NavigationBarDestination(icon=ft.Icons.INVENTORY_2_OUTLINED, selected_icon=ft.Icons.INVENTORY_2, label="Inventario"),
+            ft.NavigationBarDestination(icon=ft.Icons.ATTACH_MONEY_OUTLINED, selected_icon=ft.Icons.ATTACH_MONEY, label="Caja"),
+            ft.NavigationBarDestination(icon=ft.Icons.HISTORY_OUTLINED, selected_icon=ft.Icons.HISTORY, label="Historial"),
+            ft.NavigationBarDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="Config."),
         ],
     )
 
@@ -2033,7 +2033,7 @@ def main(page: ft.Page):
         contenedor_principal.content = estructura_login
         page.update()
 
-    btn_logout = ft.IconButton(icon=ft.icons.LOGOUT, icon_color="red", on_click=cerrar_sesion, tooltip="Cerrar Sesión")
+    btn_logout = ft.IconButton(icon=ft.Icons.LOGOUT, icon_color="red", on_click=cerrar_sesion, tooltip="Cerrar Sesión")
 
     def inicializar_interfaz_sistema(rol_usuario, username):
         usuario_estado["rol"] = rol_usuario
@@ -2066,8 +2066,8 @@ def main(page: ft.Page):
         page.update()
 
     # --- PANTALLA GRÁFICA DE LOGIN ---
-    txt_user = ft.TextField(label="Usuario", icon=ft.icons.PERSON, width=280)
-    txt_pass = ft.TextField(label="Contraseña", icon=ft.icons.LOCK, password=True, can_reveal_password=True, width=280)
+    txt_user = ft.TextField(label="Usuario", icon=ft.Icons.PERSON, width=280)
+    txt_pass = ft.TextField(label="Contraseña", icon=ft.Icons.LOCK, password=True, can_reveal_password=True, width=280)
     lbl_error = ft.Text("", color="red", size=12)
 
     def intentar_login(e):
@@ -2091,8 +2091,8 @@ def main(page: ft.Page):
     btn_entrar = ft.ElevatedButton(
         "Ingresar al Sistema", 
         on_click=intentar_login, 
-        bgcolor=ft.colors.BLUE_800, 
-        color=ft.colors.WHITE, 
+        bgcolor=ft.Colors.BLUE_800, 
+        color=ft.Colors.WHITE, 
         width=280,
         style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
     )
@@ -2100,9 +2100,9 @@ def main(page: ft.Page):
     tarjeta_login = ft.Card(
         content=ft.Container(
             content=ft.Column([
-                ft.Icon(ft.icons.LOCAL_DRINK_ROUNDED, size=50, color=ft.colors.BLUE_800),
-                ft.Text("CELER APP", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900),
-                ft.Text("SOFTWARE LADERA", size=14, color=ft.colors.BLACK, weight=ft.FontWeight.BOLD),
+                ft.Icon(ft.Icons.LOCAL_DRINK_ROUNDED, size=50, color=ft.Colors.BLUE_800),
+                ft.Text("CELER APP", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                ft.Text("SOFTWARE LADERA", size=14, color=ft.Colors.BLACK, weight=ft.FontWeight.BOLD),
                 ft.Container(height=10),
                 txt_user,
                 txt_pass,
