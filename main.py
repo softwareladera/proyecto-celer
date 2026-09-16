@@ -15,7 +15,7 @@ def inicializar_base_datos():
     """Crea la conexión remota a Turso y las tablas si no existen."""
     # 1. Intentamos leer desde Vercel
     db_url = os.getenv("TURSO_DATABASE_URL")
-    auth_token = os.getenv("TURSO_AUTH_TOKEN")
+    auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip('"' "'")
     
 
         
