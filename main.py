@@ -172,7 +172,7 @@ def db_obtener_stock_actual_vendedores():
         cursor.close()
     return datos
 
-ddef db_obtener_todos_usuarios():
+def db_obtener_todos_usuarios():
     """Trae la lista de todos los usuarios registrados en el sistema para poder listarlos."""
     cursor = conn.cursor()
     try:
