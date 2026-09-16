@@ -1957,7 +1957,7 @@ def main(page: ft.Page):
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=85,
         min_extended_width=200,
-        leading=ft.Icon(ft.icons.STORE, size=35, color=ft.colors.BLUE_800),
+        leading=ft.Icon(ft.icons.STOREFRONT, size=35, color=ft.colors.BLUE_800),
         visible=False,
         destinations=[
             ft.NavigationRailDestination(icon=ft.icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.icons.POINT_OF_SALE, label="Ventas"),
