@@ -1932,9 +1932,6 @@ def vista_configuracion(page: ft.Page):
 # 3. PARTE: ENRUTAMIENTO GENERAL Y MENÚ (MAIN OPTIMIZADO PARA MÓVIL)
 # =====================================================================
 
-import flet as ft
-import os
-
 def main(page: ft.Page):
     page.title = "SOFTWARE LADERA"
     page.theme_mode = ft.ThemeMode.LIGHT
