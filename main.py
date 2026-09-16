@@ -2137,4 +2137,4 @@ def main(page: ft.Page):
     page.add(estructura_completa)
 
 if __name__ == "__main__":
-app = flet_fastapi.app(main)
+    app = flet_fastapi.app(main)
