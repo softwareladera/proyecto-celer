@@ -1163,7 +1163,7 @@ def vista_ventas(page: ft.Page):
     render_carrito()
 
     return ft.Column([
-        ft.Text("🥤 LA RICA CHICHA DE CARACAS|  CELER APP ", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
+        ft.Text("🥤 LA RICA CHICHA DE CARACAS", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
         cuadricula_productos,
         ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_700),
         lista_carrito,
