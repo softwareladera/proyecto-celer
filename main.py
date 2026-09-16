@@ -1,4 +1,5 @@
 ﻿import flet as ft
+import flet.fastapi as flet_fastapi
 import os
 from flet import icons
 import libsql
@@ -2136,6 +2137,4 @@ def main(page: ft.Page):
     page.add(estructura_completa)
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    # Usamos la sintaxis estándar compatible con la web
-    ft.app(target=main, host="0.0.0.0", port=port)
+app = flet_fastapi.app(main)
