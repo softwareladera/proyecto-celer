@@ -968,7 +968,7 @@ def abrir_modal_puestos_separado(page: ft.Page, al_cerrar=None):
                     lista_existencias_vendedores.controls.append(
                         ft.Row([
                             ft.Row([
-                                ft.Icon(ft.icons.STOREFRONT, color=ft.colors.BLUE_700, size=16),
+                                ft.Icon(ft.icons.HOME, color=ft.colors.BLUE_700, size=16),
                                 ft.Text(f"{str(vendedor_puesto).upper()} - {nombre_vaso}", size=12)
                             ], spacing=5),
                             ft.Text(f"{cantidad_asignada} und.", weight=ft.FontWeight.BOLD, size=12, color=color_alerta)
@@ -1957,7 +1957,7 @@ def main(page: ft.Page):
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=85,
         min_extended_width=200,
-        leading=ft.Icon(ft.icons.STOREFRONT, size=35, color=ft.colors.BLUE_800),
+        leading=ft.Icon(ft.icons.HOME, size=35, color=ft.colors.BLUE_800),
         visible=False,
         destinations=[
             ft.NavigationRailDestination(icon=ft.icons.POINT_OF_SALE_OUTLINED, selected_icon=ft.icons.POINT_OF_SALE, label="Ventas"),
