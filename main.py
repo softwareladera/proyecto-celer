@@ -1,6 +1,4 @@
 ﻿import flet as ft
-ft.icons=ft.Icons
-ft.colors=ft.Colors
 import os
 from flet import icons
 import libsql
