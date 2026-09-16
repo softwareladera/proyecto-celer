@@ -172,20 +172,18 @@ def db_obtener_stock_actual_vendedores():
         cursor.close()
     return datos
 
-def db_obtener_todos_usuarios():
+ddef db_obtener_todos_usuarios():
     """Trae la lista de todos los usuarios registrados en el sistema para poder listarlos."""
     cursor = conn.cursor()
-    usuarios = []
     try:
-        # Traemos el ID, el nombre de usuario y el rol ('master' o 'vendedor')
         cursor.execute("SELECT id, username, rol FROM usuarios ORDER BY id DESC")
         usuarios = cursor.fetchall()
     except Exception as e:
         print(f"Error al obtener la lista de usuarios: {e}")
         usuarios = []
-    finally:
+        
+    cursor.close()
     return usuarios
-        cursor.close()
 
 def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     """Suma las ventas en $ por cada vendedor filtrado por un día específico (YYYY-MM-DD)."""
