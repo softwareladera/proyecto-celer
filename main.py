@@ -2137,4 +2137,7 @@ def main(page: ft.Page):
     page.add(estructura_completa)
 
 if __name__ == "__main__":
-    app = flet_fastapi.app(main)
+    import os
+    port = int(os.getenv("PORT", 8080))
+    # Esta es la sintaxis oficial y limpia para la versión actual de Flet en web
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
