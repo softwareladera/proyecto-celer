@@ -1221,7 +1221,7 @@ def vista_ventas(page: ft.Page):
     render_carrito()
 
     return ft.Column([
-        ft.Text("🥤 LA RICA CHICHA DE CARACAS ", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
+        ft.Text("🥤 LA RICA CHICHA DE CARACAS|  CELER APP ", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
         cuadricula_productos,
         ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_700),
         lista_carrito,
@@ -2100,8 +2100,7 @@ def main(page: ft.Page):
     tarjeta_login = ft.Card(
         content=ft.Container(
             content=ft.Column([
-                ft.Icon(ft.Icons.LOCAL_DRINK_ROUNDED, size=50, color=ft.Colors.BLUE_800),
-                ft.Text("CELER APP", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
+                ft.Text("CELER APP", size=40, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_900),
                 ft.Text("SOFTWARE LADERA", size=14, color=ft.Colors.BLACK, weight=ft.FontWeight.BOLD),
                 ft.Container(height=10),
                 txt_user,
