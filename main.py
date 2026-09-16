@@ -1221,7 +1221,7 @@ def vista_ventas(page: ft.Page):
     render_carrito()
 
     return ft.Column([
-        ft.Text("🥤 LA RICA CHICHA DE CARACAS / Software Ladera", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_800),
+        ft.Text("🥤 LA RICA CHICHA DE CARACAS/            Software Ladera ", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_800),
         cuadricula_productos,
         ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_GREY_700),
         lista_carrito,
@@ -1933,7 +1933,7 @@ def vista_configuracion(page: ft.Page):
 # =====================================================================
 
 def main(page: ft.Page):
-    page.title = "SOFTWARE LADERA"
+    page.title = "CELER"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.scroll = None
     page.padding = 0  
@@ -2101,7 +2101,7 @@ def main(page: ft.Page):
         content=ft.Container(
             content=ft.Column([
                 ft.Icon(ft.icons.LOCAL_DRINK_ROUNDED, size=50, color=ft.colors.BLUE_800),
-                ft.Text("LA RICA CHICA", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900),
+                ft.Text("CELER APP", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900),
                 ft.Text("SOFTWARE LADERA", size=14, color=ft.colors.BLACK, weight=ft.FontWeight.BOLD),
                 ft.Container(height=10),
                 txt_user,
