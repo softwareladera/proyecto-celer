@@ -937,7 +937,7 @@ def abrir_modal_puestos_separado(page: ft.Page, al_cerrar=None):
         )
 
         if exito:
-            txt_cantidad.value = "?"
+            txt_cantidad.value = "0"
             cargar_datos_modal()
 
     cargar_datos_modal()
