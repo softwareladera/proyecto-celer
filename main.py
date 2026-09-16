@@ -2137,9 +2137,5 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    # Cambiamos ft.app por ft.app_main para la web
-    ft.app_main(
-        target=main, 
-        host="0.0.0.0", 
-        port=port
-    )
+    # Usamos la sintaxis estándar compatible con la web
+    ft.app(target=main, host="0.0.0.0", port=port)
