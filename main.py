@@ -1,5 +1,4 @@
 ﻿import flet as ft
-import flet.fastapi as flet_fastapi
 import os
 from flet import icons
 import libsql
