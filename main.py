@@ -213,10 +213,9 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
                 reporte[vendedor] = monto_total
     except Exception as e:
         print(f"Error al obtener ventas por vendedor en historial: {e}")
-    finally:
         
+    cursor.close()
     return reporte
-        cursor.close()
 
 def db_eliminar_usuario(id_usuario):
     """Elimina de forma permanente un usuario por su ID, impidiendo borrar la cuenta 'admin'."""
