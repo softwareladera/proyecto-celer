@@ -10,16 +10,13 @@ from datetime import datetime
 # =====================================================================
 # 1. PARTE: CONFIGURACIÓN Y FUNCIONES DE LA BASE DE DATOS (SQLITE)
 # =====================================================================
+# 1. Intentamos leer desde Vercel
+db_url = os.getenv("TURSO_DATABASE_URL")
+auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip('"' "'")
+conn = libsql.connect(database=db_url, auth_token=auth_token)
 
 def inicializar_base_datos():
     """Crea la conexión remota a Turso y las tablas si no existen."""
-    # 1. Intentamos leer desde Vercel
-    db_url = os.getenv("TURSO_DATABASE_URL")
-    auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip('"' "'")
-    
-
-        
-    conn = libsql.connect(database=db_url, auth_token=auth_token)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON;")
     
@@ -47,8 +44,6 @@ def inicializar_base_datos():
         FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
     );
     """)
-
-
 
     # Tabla: Productos (Inventario)
     cursor.execute("""
@@ -111,17 +106,9 @@ def inicializar_base_datos():
     conn.commit()
     return conn
 
-
-    
-
-
 # --- CONSULTAS SQL ESPECÍFICAS ---
-
-
-
 def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asignar):
     """Saca stock del inventario global y se lo asigna a un vendedor específico."""
-    conn = inicializar_base_datos()
     cursor = conn.cursor()
     try:
         vendedor_name = str(vendedor_name).upper()
@@ -148,7 +135,7 @@ def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asigna
         # 4. Sumar al inventario individual del vendedor (Si no existe el registro, se crea con INSERT OR IGNORE)
         cursor.execute("""
             INSERT OR IGNORE INTO inventario_vendedores (usuario_id, producto_id, stock_asignado)
-            VALUES (?, ?, 0)
+            VALUES (?, ?, ?)
         """, (usuario_id, producto_id))
         
         cursor.execute("""
@@ -164,11 +151,10 @@ def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asigna
         print(f"Error al asignar vasos: {e}")
         return False
     finally:
-        conn.close()
+        cursor.close()
 
 def db_obtener_stock_actual_vendedores():
     """Devuelve una lista con los vasos que tiene actualmente cada vendedor en su puesto."""
-    conn = inicializar_base_datos()
     cursor = conn.cursor()
     datos = []
     try:
@@ -183,15 +169,11 @@ def db_obtener_stock_actual_vendedores():
     except Exception as e:
         print(f"Error al obtener inventario de vendedores: {e}")
     finally:
-        conn.close()
+        cursor.close()
     return datos
-
-
-
 
 def db_obtener_todos_usuarios():
     """Trae la lista de todos los usuarios registrados en el sistema para poder listarlos."""
-    conn = inicializar_base_datos()
     cursor = conn.cursor()
     usuarios = []
     try:
@@ -202,14 +184,13 @@ def db_obtener_todos_usuarios():
         print(f"Error al obtener la lista de usuarios: {e}")
         usuarios = []
     finally:
-        conn.close()
     return usuarios
-
+        cursor.close()
 
 def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     """Suma las ventas en $ por cada vendedor filtrado por un día específico (YYYY-MM-DD)."""
     
-    conn = inicializar_base_datos()
+    
     cursor = conn.cursor()
     reporte = {}
     try:
@@ -235,9 +216,9 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     except Exception as e:
         print(f"Error al obtener ventas por vendedor en historial: {e}")
     finally:
-        conn.close()
+        
     return reporte
-
+        cursor.close()
 
 
 
