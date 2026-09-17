@@ -135,7 +135,7 @@ def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asigna
         # 4. Sumar al inventario individual del vendedor (Si no existe el registro, se crea con INSERT OR IGNORE)
         cursor.execute("""
             INSERT OR IGNORE INTO inventario_vendedores (usuario_id, producto_id, stock_asignado)
-            VALUES (?, ?, ?)
+            VALUES (?, ?, 0)
         """, (usuario_id, producto_id))
         
         cursor.execute("""
