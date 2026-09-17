@@ -407,34 +407,56 @@ def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referenci
     """Registra la venta y descuenta los vasos directamente de la asignación del vendedor."""
     cursor = conn.cursor()
     try:
+        # --- ASEGURAR COLUMNAS (Formato correcto para Turso/libsql) ---
+        try: 
+            cursor.execute("ALTER TABLE ventas ADD COLUMN vendedor TEXT DEFAULT 'ADMIN';")
+            conn.commit()
+        except Exception as e: 
+            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise e
+
+        try: 
+            cursor.execute("ALTER TABLE ventas ADD COLUMN referencia_pm TEXT DEFAULT '';")
+            conn.commit()
+        except Exception as e: 
+            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise e
+
+        try: 
+            cursor.execute("ALTER TABLE ventas ADD COLUMN conciliado INTEGER DEFAULT 0;")
+            conn.commit()
+        except Exception as e: 
+            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise e
+        # ---------------------------------------------------------------
+
         vendedor_limpio = str(vendedor_name).upper()
-        
-        # # 1. Insertar la cabecera de la venta (conciliado por defecto en 0)
-        cursor.execute("""
-            INSERT INTO ventas (total, metodo_pago, vendedor, referencia_pm, conciliado) 
-            VALUES (?, ?, ?, ?, 0)
-        """, (float(total), metodo, vendedor_limpio, str(referencia_pm or "")))
-        
+
+        # 1. Insertar la cabecera de la venta
+        cursor.execute(
+            "INSERT INTO ventas (total, metodo_pago, vendedor, referencia_pm, conciliado) VALUES (?, ?, ?, ?, 0)", 
+            (float(total), metodo, vendedor_limpio, str(referencia_pm or ""))
+        )
         v_id = cursor.lastrowid
         
-        # # 2. Buscar el id del vendedor para poder descontar de su inventario asignado
+        # 2. Buscar el id del vendedor para poder descontar de su inventario asignado
         cursor.execute("SELECT id FROM usuarios WHERE UPPER(username) = ?", (vendedor_limpio,))
         usuario_row = cursor.fetchone()
         usuario_id = usuario_row[0] if usuario_row else None
-        
-        # # 3. Procesar los artículos del carrito
+
+        # 3. Procesar los artículos del carrito
         for item in carrito:
             id_p = int(item[0])
             precio_u = float(item[2])
             cantidad = int(item[3])
-            
+
             # Insertar en el detalle de la venta
             cursor.execute("""
                 INSERT INTO detalles_ventas (venta_id, producto_id, cantidad, precio_unitario) 
                 VALUES (?, ?, ?, ?)
             """, (v_id, id_p, cantidad, precio_u))
             
-            # # DESCUENTO INTELIGENTE:
+            # DESCUENTO INTELIGENTE:
             if usuario_id:
                 # Si el usuario tiene asignación en el puesto, se le resta a él
                 cursor.execute("""
@@ -444,18 +466,12 @@ def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referenci
                 """, (cantidad, usuario_id, id_p))
             else:
                 # Si vende un usuario sin asignar, descuenta del global
-                cursor.execute("""
-                    UPDATE productos 
-                    SET stock = stock - ? 
-                    WHERE id = ?
-                """, (cantidad, id_p))
-                
-        # Guardamos todo el lote completo en un solo viaje a Turso
+                cursor.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (cantidad, id_p))
+            
         conn.commit()
         return True
-        
     except Exception as e:
-        conn.rollback() # Si algo falla en el bucle, deshace toda la venta de forma segura
+        conn.rollback()
         print(f"Error en base de datos al vender: {e}")
         return False
     finally:
