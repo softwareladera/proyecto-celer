@@ -497,7 +497,7 @@ def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referenci
 
 
 def db_obtener_historial_ventas():
-    """Trae las ventas de forma segura adaptándose al nombre real de la columna de fecha."""
+    """Trae las ventas de forma segura adaptándose al nombre real de la columna de fecha y convirtiendo UTC a Venezuela."""
     conn = inicializar_base_datos()
     cursor = conn.cursor()
     datos = []
@@ -518,15 +518,15 @@ def db_obtener_historial_ventas():
                 raise e
         # ---------------------------------------------------------------
         
-        # INTENTO 1: Probamos con 'fecha_hora'
+        # INTENTO 1: Probamos con 'fecha_hora' aplicando la resta de 4 horas
         try:
-            cursor.execute("SELECT id, fecha_hora, total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
+            cursor.execute("SELECT id, datetime(fecha_hora, '-4 hours'), total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
             datos = cursor.fetchall()
         except Exception as e:
             # Si el error es porque no encuentra la columna 'fecha_hora', pasamos al INTENTO 2
             if "no such column" in str(e).lower() or "has no column" in str(e).lower():
-                # INTENTO 2: Si falla por el nombre, probamos con 'fecha'
-                cursor.execute("SELECT id, fecha, total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
+                # INTENTO 2: Si falla por el nombre, probamos con 'fecha' aplicando también la resta de 4 horas
+                cursor.execute("SELECT id, datetime(fecha, '-4 hours'), total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
                 datos = cursor.fetchall()
             else:
                 # Si fue otro tipo de error diferente al nombre de la columna, lo relanzamos
@@ -538,7 +538,6 @@ def db_obtener_historial_ventas():
     finally:
         conn.close()
     return datos
-
 
 
 
