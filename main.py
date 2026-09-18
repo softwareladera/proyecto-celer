@@ -494,15 +494,10 @@ def db_obtener_historial_ventas():
 
 def db_obtener_movimientos_caja():
     cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT fecha, tipo, categoría, descripción, monto FROM Flujo_caja ORDER BY id DESC")
-        datos = cursor.fetchall()
-        return datos
-    except Exception as e:
-        print(f"Error al obtener movimientos de caja: {e}")
-        return []
-    finally:
-        cursor.close()
+    cursor.execute("SELECT fecha, tipo, categoria, descripcion, monto FROM flujo_caja ORDER BY id DESC")
+    datos = cursor.fetchall()
+    cursor.close()
+    return datos
 
 def db_insertar_movimiento_caja(tipo, cat, desc, monto):
     cursor = conn.cursor()
