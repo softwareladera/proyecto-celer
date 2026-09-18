@@ -1489,61 +1489,52 @@ def vista_historial_ventas(page: ft.Page):
         )
 
     def cargar_historial():
-        lista_historial.controls.clear()
-        
-        try:
-            tasa = float(db_obtener_tasa_dolar())
-        except Exception:
-            tasa = 1.0
-        
-        try:
-            ventas = db_obtener_historial_ventas()
-        except Exception:
-            ventas = []
-        
-        if not ventas:
-            lista_historial.controls.append(ft.Text("No hay ventas registradas.", size=14, color="grey"))
-            page.update()
-            return
-
-        for v in ventas:
-            try:
-                id_v = v[0]
-                fecha = v[1]
-                
-                # Búsqueda segura del total numérico en la tupla
-                total = 0.0
-                for item in v:
-                    if isinstance(item, (int, float)):
-                        total = float(item)
-                        break
-                    try:
-                        if "." in str(item) and float(item):
-                            total = float(item)
-                            break
-                    except ValueError:
-                        continue
-                if total == 0.0:
-                    try: total = float(v[2])
-                    except Exception: total = 0.0
-
-                metodo = v[3]
-                vendedor = v[4] if len(v) > 4 and v[4] else "ADMIN"
-                referencia = v[5] if len(v) > 5 and v[5] else ""
-                
-                try:
-                    conciliado = int(v[6]) if len(v) > 6 and v[6] is not None else 0
-                except Exception:
-                    conciliado = 0
-                
-                tarjeta = generar_tarjeta_venta(id_v, fecha, total, metodo, tasa, vendedor, referencia, conciliado)
-                lista_historial.controls.append(tarjeta)
-            except Exception as e_fila:
-                print(f"Fila ignorada por error menor: {e_fila}")
-                continue
-            
+    lista_historial.controls.clear()
+    
+    try:
+        tasa = float(db_obtener_tasa_dolar())
+    except Exception:
+        tasa = 1.0
+    
+    try:
+        ventas = db_obtener_historial_ventas()
+    except Exception:
+        ventas = []
+    
+    if not ventas:
+        lista_historial.controls.append(ft.Text("No hay ventas registradas.", size=14, color="grey"))
         page.update()
+        return
 
+    for v in ventas:
+        try:
+            # Los índices se leen estrictamente según el SELECT de tu Base de Datos:
+            # SELECT id (0), fecha_hora (1), total (2), metodo_pago (3), vendedor (4), referencia_pm (5), conciliado (6)
+            id_v = v[0]
+            fecha = v[1]
+            
+            # SOLUCIÓN DE RAÍZ: Leemos directamente el índice 2 de forma segura sin bucles cruzados
+            try:
+                total = float(v[2])
+            except (IndexError, ValueError, TypeError):
+                total = 0.0
+
+            metodo = v[3] if len(v) > 3 else "PUNTO"
+            vendedor = v[4] if len(v) > 4 and v[4] else "ADMIN"
+            referencia = v[5] if len(v) > 5 and v[5] else ""
+            
+            try:
+                conciliado = int(v[6]) if len(v) > 6 and v[6] is not None else 0
+            except Exception:
+                conciliado = 0
+            
+            tarjeta = generar_tarjeta_venta(id_v, fecha, total, metodo, tasa, vendedor, referencia, conciliado)
+            lista_historial.controls.append(tarjeta)
+        except Exception as e_fila:
+            print(f"Fila ignorada por error menor: {e_fila}")
+            continue
+        
+    page.update()
     # =========================================================================
     #  BLOQUE DE FILTRADO CORREGIDO Y COMPACTO (REEMPLAZAR AL FINAL)
     # =========================================================================
