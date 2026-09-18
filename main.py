@@ -205,7 +205,7 @@ def db_obtener_todos_usuarios():
 
 
 def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
-    """Suma las ventas en $ por cada vendedor filtrado por un día específico (YYYY-MM-DD)."""
+    """Suma las ventas en $ por cada vendedor convirtiendo la hora UTC a Venezuela (-4 horas)."""
     
     conn = inicializar_base_datos()
     cursor = conn.cursor()
@@ -214,9 +214,9 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
         query = "SELECT vendedor, SUM(total) FROM ventas"
         params = []
         
-        # Filtro estricto por el día seleccionado (usando la columna que ya tienes validada)
+        # SOLUCIÓN: Usamos datetime(fecha_hora, '-4 hours') para convertir UTC a hora de Venezuela
         if fecha_seleccionada:
-            query += " WHERE DATE(fecha_hora) = DATE(?)"
+            query += " WHERE DATE(datetime(fecha_hora, '-4 hours')) = DATE(?)"
             params.append(fecha_seleccionada)
             
         query += " GROUP BY vendedor ORDER BY SUM(total) DESC"
@@ -235,7 +235,6 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     finally:
         conn.close()
     return reporte
-
 
 
 
