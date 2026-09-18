@@ -10,13 +10,14 @@ from datetime import datetime
 # =====================================================================
 # 1. PARTE: CONFIGURACIÓN Y FUNCIONES DE LA BASE DE DATOS (SQLITE)
 # =====================================================================
-# 1. Intentamos leer desde Vercel
-db_url = os.getenv("TURSO_DATABASE_URL")
-auth_token = os.getenv("TURSO_AUTH_TOKEN", "")
-conn = libsql.connect(database=db_url, auth_token=auth_token)
 
 def inicializar_base_datos():
     """Crea la conexión remota a Turso y las tablas si no existen."""
+    # 1. Intentamos leer desde Vercel
+    db_url = os.getenv("TURSO_DATABASE_URL")
+    auth_token = os.getenv("TURSO_AUTH_TOKEN", "").strip('"' "'")
+    
+    conn = libsql.connect(database=db_url, auth_token=auth_token)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON;")
     
@@ -44,6 +45,8 @@ def inicializar_base_datos():
         FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
     );
     """)
+
+
 
     # Tabla: Productos (Inventario)
     cursor.execute("""
@@ -106,9 +109,17 @@ def inicializar_base_datos():
     conn.commit()
     return conn
 
+
+    
+
+
 # --- CONSULTAS SQL ESPECÍFICAS ---
+
+
+
 def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asignar):
     """Saca stock del inventario global y se lo asigna a un vendedor específico."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     try:
         vendedor_name = str(vendedor_name).upper()
@@ -151,10 +162,11 @@ def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asigna
         print(f"Error al asignar vasos: {e}")
         return False
     finally:
-        cursor.close()
+        conn.close()
 
 def db_obtener_stock_actual_vendedores():
     """Devuelve una lista con los vasos que tiene actualmente cada vendedor en su puesto."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     datos = []
     try:
@@ -169,26 +181,33 @@ def db_obtener_stock_actual_vendedores():
     except Exception as e:
         print(f"Error al obtener inventario de vendedores: {e}")
     finally:
-        cursor.close()
+        conn.close()
     return datos
+
+
+
 
 def db_obtener_todos_usuarios():
     """Trae la lista de todos los usuarios registrados en el sistema para poder listarlos."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
+    usuarios = []
     try:
+        # Traemos el ID, el nombre de usuario y el rol ('master' o 'vendedor')
         cursor.execute("SELECT id, username, rol FROM usuarios ORDER BY id DESC")
         usuarios = cursor.fetchall()
     except Exception as e:
         print(f"Error al obtener la lista de usuarios: {e}")
         usuarios = []
-        
-    cursor.close()
+    finally:
+        conn.close()
     return usuarios
+
 
 def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     """Suma las ventas en $ por cada vendedor filtrado por un día específico (YYYY-MM-DD)."""
     
-    
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     reporte = {}
     try:
@@ -213,53 +232,69 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
                 reporte[vendedor] = monto_total
     except Exception as e:
         print(f"Error al obtener ventas por vendedor en historial: {e}")
-        
-    cursor.close()
+    finally:
+        conn.close()
     return reporte
+
+
+
+
 
 def db_eliminar_usuario(id_usuario):
     """Elimina de forma permanente un usuario por su ID, impidiendo borrar la cuenta 'admin'."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     # Protección extra para que el administrador no se auto-elimine por accidente
     cursor.execute("DELETE FROM usuarios WHERE id = ? AND username != 'admin'", (id_usuario,))
     conn.commit()
-    cursor.close()
-        
+    conn.close()
+
+
+
 def db_verificar_credenciales(username, password):
     """Verifica si el usuario existe y la contraseña coincide. Retorna (rol, username) o None."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     cursor.execute("SELECT rol, username FROM usuarios WHERE LOWER(username) = LOWER(?) AND password = ?", (username, password))
     res = cursor.fetchone()
-    cursor.close()
+    conn.close()
     return res if res else None
 
 def db_obtener_vendedores():
     """Retorna la lista de usuarios que tienen el rol de vendedor."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     cursor.execute("SELECT id, username FROM usuarios WHERE rol = 'vendedor' ORDER BY username ASC")
     datos = cursor.fetchall()
-    cursor.close()
+    conn.close()
     return datos
+
+
 
 def db_insertar_usuario(username, password, rol):
     """Registra un nuevo usuario en el sistema con Turso."""
-    cursor = conn.cursor()
+    conn = None
     try:
+        conn = inicializar_base_datos()
+        cursor = conn.cursor()
         cursor.execute("INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)", (username, password, rol))
         conn.commit()
         return True
+    # Captura cualquier error de Base de Datos (así no dependes de sqlite3)
     except Exception as e:
-        # Captura cualquier error de Base de Datos (así no dependes de sqlite3)
         # Si el error menciona que ya existe o está duplicado (IntegrityError de Turso)
         if "UNIQUE" in str(e) or "already exists" in str(e):
             return False  # El usuario ya existe
-        raise e  # Si es otro error diferente, lo muestra en consola para que lo veas
+        raise e # Si es otro error diferente, lo muestra en consola para que lo veas
     finally:
-        cursor.close()
+        if conn:
+            conn.close()
+
 
 
 def db_actualizar_conciliacion(id_venta, estado):
     """Actualiza el estado de verificación en el banco (1 para tildado, 0 para destildar)"""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE ventas SET conciliado = ? WHERE id = ?", (int(estado), int(id_venta)))
@@ -267,144 +302,126 @@ def db_actualizar_conciliacion(id_venta, estado):
     except Exception as e:
         print(f"Error al actualizar conciliación: {e}")
     finally:
-        cursor.close()
+        conn.close()
+
+
+
 
 def db_obtener_lista_vendedores():
     """Trae la lista de todos los nombres de usuario registrados."""
-    cursor = conn.cursor()
     try:
+        conn = inicializar_base_datos()
+        cursor = conn.cursor()
         # Traemos solo los usernames ordenados alfabéticamente
-        cursor.execute("SELECT username FROM usuarios ORDER BY username ASC")
+        cursor.execute("SELECT username FROM usuarios ORDER BY username ASC;")
         filas = cursor.fetchall()
+        conn.close()
         # Convertimos las tuplas de SQLite en una lista limpia de strings
         return [fila[0] for fila in filas]
     except Exception as e:
         print(f"Error al obtener vendedores: {e}")
         return []
-    finally:
-        cursor.close()
 
 
 
 def db_obtener_resumen(fecha_inicio=None, fecha_fin=None):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        # # 1. CONSULTA DE VENTAS
-        if fecha_inicio and fecha_fin:
-            query_ventas = "SELECT SUM(total) FROM ventas WHERE date(fecha_hora) BETWEEN ? AND ?"
-            cursor.execute(query_ventas, (fecha_inicio, fecha_fin))
-        else:
-            query_ventas = "SELECT SUM(total) FROM ventas"
-            cursor.execute(query_ventas)
-            
-        res_v = cursor.fetchone()
-        total_ventas = res_v[0] if res_v and res_v[0] is not None else 0.0
+    
+    # 1. CONSULTA DE VENTAS
+    if fecha_inicio and fecha_fin:
+        # SQLite guarda "YYYY-MM-DD HH:MM:SS" en ventas, usamos date() para extraer solo la fecha
+        query_ventas = "SELECT SUM(total) FROM ventas WHERE date(fecha_hora) BETWEEN ? AND ?;"
+        cursor.execute(query_ventas, (fecha_inicio, fecha_fin))
+    else:
+        query_ventas = "SELECT SUM(total) FROM ventas;"
+        cursor.execute(query_ventas)
         
-        # # 2. CONSULTA DE EGRESOS
-        if fecha_inicio and fecha_fin:
-            query_egresos = "SELECT SUM(monto) FROM Flujo_caja WHERE tipo = 'Egreso' AND date(fecha) BETWEEN ? AND ?"
-            cursor.execute(query_egresos, (fecha_inicio, fecha_fin))
-        else:
-            query_egresos = "SELECT SUM(monto) FROM Flujo_caja WHERE tipo = 'Egreso'"
-            cursor.execute(query_egresos)
-            
-        res_e = cursor.fetchone()
-        total_egresos = res_e[0] if res_e and res_e[0] is not None else 0.0
+    res_v = cursor.fetchone()
+    total_ventas = res_v[0] if res_v and res_v[0] is not None else 0.0
+    
+    # 2. CONSULTA DE EGRESOS
+    if fecha_inicio and fecha_fin:
+        query_egresos = "SELECT SUM(monto) FROM flujo_caja WHERE tipo = 'EGRESO' AND date(fecha) BETWEEN ? AND ?;"
+        cursor.execute(query_egresos, (fecha_inicio, fecha_fin))
+    else:
+        query_egresos = "SELECT SUM(monto) FROM flujo_caja WHERE tipo = 'EGRESO';"
+        cursor.execute(query_egresos)
         
-        # # 3. ALERTA DE STOCK (Mantenido global e independiente del tiempo)
-        cursor.execute("SELECT COUNT(*) FROM productos WHERE stock <= stock_minimo")
-        res_a = cursor.fetchone()
-        p_alerta = res_a[0] if res_a and res_a[0] is not None else 0
-        
-        return total_ventas, total_egresos, (total_ventas - total_egresos), p_alerta
-        
-    except Exception as e:
-        print(f"Error al obtener resumen: {e}")
-        return 0.0, 0.0, 0.0, 0
-    finally:
-        cursor.close()
+    res_e = cursor.fetchone()
+    total_egresos = res_e[0] if res_e and res_e[0] is not None else 0.0
+    
+    # 3. ALERTA DE STOCK (Mantenido global e independiente del tiempo)
+    cursor.execute("SELECT COUNT(*) FROM productos WHERE stock <= stock_minimo;")
+    res_a = cursor.fetchone()
+    p_alerta = res_a[0] if res_a and res_a[0] is not None else 0
+    
+    conn.close()
     return total_ventas, total_egresos, (total_ventas - total_egresos), p_alerta
 
 def db_insertar_producto(nombre, p_compra, p_venta, stock, stock_min):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        # Verificar si el producto ya existe (ignorando mayúsculas/minúsculas)
-        cursor.execute("SELECT id, stock FROM productos WHERE LOWER(nombre) = LOWER(?)", (nombre,))
-        existente = cursor.fetchone()
+    
+    # Verificar si el producto ya existe (ignorando mayúsculas/minúsculas)
+    cursor.execute("SELECT id, stock FROM productos WHERE LOWER(nombre) = LOWER(?)", (nombre,))
+    existente = cursor.fetchone()
+    
+    if existente:
+        # Si ya existe, actualiza el stock sumando el nuevo, y actualiza los precios
+        id_p, stock_actual = existente
+        nuevo_stock = stock_actual + stock
+        cursor.execute("""
+            UPDATE productos 
+            SET precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ? 
+            WHERE id = ?
+        """, (p_compra, p_venta, nuevo_stock, stock_min, id_p))
+    else:
+        # Si no existe, lo crea desde cero
+        cursor.execute("""
+            INSERT INTO productos (nombre, precio_compra, precio_venta, stock, stock_minimo) 
+            VALUES (?, ?, ?, ?, ?)
+        """, (nombre, p_compra, p_venta, stock, stock_min))
         
-        if existente:
-            # Si ya existe, actualiza el stock sumando el nuevo, y actualiza los precios
-            id_p, stock_actual = existente
-            nuevo_stock = stock_actual + stock
-            cursor.execute("""
-                UPDATE productos 
-                SET precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ? 
-                WHERE id = ?
-            """, (p_compra, p_venta, nuevo_stock, stock_min, id_p))
-        else:
-            # Si no existe, lo crea desde cero
-            cursor.execute("""
-                INSERT INTO productos (nombre, precio_compra, precio_venta, stock, stock_minimo) 
-                VALUES (?, ?, ?, ?, ?)
-            """, (nombre, p_compra, p_venta, stock, stock_min))
-            
-        conn.commit()
-    except Exception as e:
-        print(f"Error al insertar/actualizar producto: {e}")
-    finally:
-        cursor.close()
+    conn.commit()
+    conn.close()
+
 
 def db_actualizar_producto(id_p, nombre, p_compra, p_venta, stock, stock_min):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            UPDATE productos
-            SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ?
-            WHERE id = ?
-        """, (nombre, p_compra, p_venta, stock, stock_min, id_p))
-        conn.commit()
-    except Exception as e:
-        print(f"Error al actualizar producto: {e}")
-    finally:
-        cursor.close()
+    cursor.execute("""
+        UPDATE productos 
+        SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ? 
+        WHERE id = ?
+    """, (nombre, p_compra, p_venta, stock, stock_min, id_p))
+    conn.commit()
+    conn.close()
 
 def db_eliminar_producto(id_p):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM productos WHERE id = ?", (id_p,))
-        conn.commit()
-    except Exception as e:
-        print(f"Error al eliminar producto: {e}")
-    finally:
-        cursor.close()
+    cursor.execute("DELETE FROM productos WHERE id = ?", (id_p,))
+    conn.commit()
+    conn.close()
 
 def db_obtener_productos():
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT id, nombre, precio_compra, precio_venta, stock, stock_minimo FROM productos ORDER BY nombre ASC")
-        datos = cursor.fetchall()
-        return datos
-    except Exception as e:
-        print(f"Error al obtener productos: {e}")
-        return []
-    finally:
-        cursor.close()
+    cursor.execute("SELECT id, nombre, precio_compra, precio_venta, stock, stock_minimo FROM productos ORDER BY nombre ASC")
+    datos = cursor.fetchall()
+    conn.close()
+    return datos
+
+
 
 def db_buscar_producto_venta(termino):
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT id, nombre, precio_venta, stock FROM productos WHERE LOWER(nombre) LIKE LOWER(?) ORDER BY nombre ASC", (f"%{termino}%",))
-        datos = cursor.fetchall()
-        return datos
-    except Exception as e:
-        print(f"Error al buscar producto: {e}")
-        return []
-    finally:
-        cursor.close()
+    conn = inicializar_base_datos()
 
     
 def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referencia_pm=None):
     """Registra la venta y descuenta los vasos directamente de la asignación del vendedor."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     try:
         # --- ASEGURAR COLUMNAS (Formato correcto para Turso/libsql) ---
@@ -475,89 +492,109 @@ def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referenci
         print(f"Error en base de datos al vender: {e}")
         return False
     finally:
-        cursor.close()
+        conn.close()
+
+
+
 
 def db_obtener_historial_ventas():
     """Trae las ventas de forma segura adaptándose al nombre real de la columna de fecha."""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
     datos = []
     try:
-        # Hacemos la consulta directa con el nombre real de tu columna: 'fecha_hora'
-        cursor.execute("SELECT id, fecha_hora, total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
-        datos = cursor.fetchall()
+        # --- ASEGURAR COLUMNAS (Formato correcto para Turso/libsql) ---
+        try: 
+            cursor.execute("ALTER TABLE ventas ADD COLUMN referencia_pm TEXT DEFAULT '';")
+            conn.commit()
+        except Exception as e: 
+            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise e
+
+        try: 
+            cursor.execute("ALTER TABLE ventas ADD COLUMN conciliado INTEGER DEFAULT 0;")
+            conn.commit()
+        except Exception as e: 
+            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise e
+        # ---------------------------------------------------------------
+        
+        # INTENTO 1: Probamos con 'fecha_hora'
+        try:
+            cursor.execute("SELECT id, fecha_hora, total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
+            datos = cursor.fetchall()
+        except Exception as e:
+            # Si el error es porque no encuentra la columna 'fecha_hora', pasamos al INTENTO 2
+            if "no such column" in str(e).lower() or "has no column" in str(e).lower():
+                # INTENTO 2: Si falla por el nombre, probamos con 'fecha'
+                cursor.execute("SELECT id, fecha, total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
+                datos = cursor.fetchall()
+            else:
+                # Si fue otro tipo de error diferente al nombre de la columna, lo relanzamos
+                raise e
+            
     except Exception as e:
         print(f"Error definitivo en consulta de historial: {e}")
         datos = []
     finally:
-        cursor.close()
+        conn.close()
     return datos
 
+
+
+
+
 def db_obtener_movimientos_caja():
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT fecha, tipo, categoría, descripción, monto FROM Flujo_caja ORDER BY id DESC")
-        datos = cursor.fetchall()
-        return datos
-    except Exception as e:
-        print(f"Error al obtener movimientos de caja: {e}")
-        return []
-    finally:
-        cursor.close()
-
-
+    cursor.execute("SELECT fecha, tipo, categoria, descripcion, monto FROM flujo_caja ORDER BY id DESC")
+    datos = cursor.fetchall()
+    conn.close()
+    return datos
 
 def db_insertar_movimiento_caja(tipo, cat, desc, monto):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO Flujo_caja (tipo, categoría, descripción, monto) VALUES (?, ?, ?, ?)", (tipo, cat, desc, monto))
-        conn.commit()
-    except Exception as e:
-        print(f"Error al insertar movimiento de caja: {e}")
-    finally:
-        cursor.close()
+    cursor.execute("INSERT INTO flujo_caja (tipo, categoria, descripcion, monto) VALUES (?, ?, ?, ?)", (tipo, cat, desc, monto))
+    conn.commit()
+    conn.close()
+
+
+
+
+
+
 
 def db_obtener_tasa_dolar():
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT valor FROM configuracion WHERE clave = 'tasa_dolar'")
-        res = cursor.fetchone()
-        return float(res[0]) if res else 1.0
-    except Exception as e:
-        print(f"Error al obtener tasa de dólar: {e}")
-        return 1.0
-    finally:
-        cursor.close()
+    cursor.execute("SELECT valor FROM configuracion WHERE clave = 'tasa_dolar'")
+    res = cursor.fetchone()
+    conn.close()
+    return float(res[0]) if res else 1.0
 
 def db_actualizar_tasa_dolar(nueva_tasa):
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('tasa_dolar', ?)", (str(nueva_tasa),))
-        conn.commit()
-    except Exception as e:
-        print(f"Error al actualizar tasa de dólar: {e}")
-    finally:
-        cursor.close()
+    cursor.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('tasa_dolar', ?)", (str(nueva_tasa),))
+    conn.commit()
+    conn.close()
 
 
 
 def db_obtener_detalles_productos_venta(venta_id):
-    """Vincula los detalles con la tabla de productos para traer el nombre"""
+    conn = inicializar_base_datos()
     cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT p.nombre, dv.cantidad, dv.precio_unitario
-            FROM detalles_ventas dv
-            JOIN productos p ON dv.producto_id = p.id
-            WHERE dv.venta_id = ?
-        """, (venta_id,))
-        datos = cursor.fetchall()
-        return datos
-    except Exception as e:
-        print(f"Error al obtener detalles de la venta: {e}")
-        return []
-    finally:
-        cursor.close()
-
+    # Vincula los detalles con la tabla de productos para traer el nombre
+    cursor.execute("""
+        SELECT p.nombre, dv.cantidad, dv.precio_unitario 
+        FROM detalles_ventas dv
+        JOIN productos p ON dv.producto_id = p.id
+        WHERE dv.venta_id = ?
+    """, (venta_id,))
+    datos = cursor.fetchall()
+    conn.close()
+    return datos
 
 # =====================================================================
 # 2. PARTE: INTERFACES GRÁFICAS DE LAS PANTALLAS (VISTAS)
