@@ -1700,18 +1700,36 @@ def vista_historial_ventas(page: ft.Page):
     )
     page.overlay.append(picker_historial)
 
-    # Retorno exacto adaptado con el nuevo layout e icono integrado
     try:
         cargar_historial()
         return ft.Column([
+            # Usamos una fila principal con envoltorio fluido (wrap=True) para móviles
             ft.Row([
-                ft.Text("📜 Historial de Ventas Y Conciliación Bancaria", size=20, weight=ft.FontWeight.BOLD, expand=True),
+                # 🔄 CORRECCIÓN CRÍTICA: Eliminamos expand=True para evitar que el texto
+                # colapse letra por letra hacia abajo en pantallas angostas.
+                ft.Text(
+                    "📜 Historial de Ventas Y Conciliación Bancaria", 
+                    size=20, 
+                    weight=ft.FontWeight.BOLD
+                ),
+                
+                # Bloque contenedor de tus botones de acción de filtrado
                 ft.Row([
-                    btn_reporte,       # <-- Tu nuevo botón de reporte agregado
+                    btn_reporte,
                     btn_fecha_texto, 
                     btn_reset
-                ], alignment=ft.MainAxisAlignment.END, spacing=5)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ], 
+                alignment=ft.MainAxisAlignment.START, # Alineación fluida para el salto de línea
+                spacing=5
+                )
+            ], 
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            wrap=True,         # Permite que los botones bajen si no hay espacio
+            run_spacing=10     # Separa el título de los botones cuando bajen en el móvil
+            ),
+            
+            ft.Divider(height=10, color=ft.Colors.TRANSPARENT), # Separador sutil de seguridad
             lista_historial
         ], expand=False)
     except Exception as error_general:
@@ -1719,9 +1737,6 @@ def vista_historial_ventas(page: ft.Page):
             ft.Text("⚠ Error crítico al cargar la interfaz", size=16, color="red", weight="bold"),
             ft.Text(str(error_general), color="red")
         ])
-
-
-
 
 # --- PANTALLA 6: CONFIGURACIÓN GENERAL CON ACCESO A PERSONAL ---
 # --- SUB-INTERFAZ MODAL: GESTIÓN DE PERSONAL (DESLIZANTE PARA MÓVIL) ---
