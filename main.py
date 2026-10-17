@@ -1717,7 +1717,7 @@ def vista_historial_ventas(page: ft.Page):
                 ft.Row([
                     btn_reporte,
                     btn_fecha_texto, 
-                    #btn_reset
+                    btn_reset
                 ], 
                 alignment=ft.MainAxisAlignment.START, # Alineación fluida para el salto de línea
                 spacing=5
