@@ -704,7 +704,7 @@ def vista_dashboard(page: ft.Page):
         ft.Text("Resumen analítico de las finanzas. Filtra por rango para auditar periodos específicos.", size=14, color=ft.Colors.GREY_700),
         ft.Divider(),
         
-        # Nueva Fila de Filtros de Fecha
+# --- REEMPLAZA TU CONTENEDOR DE FILTROS POR ESTE ---
         ft.Container(
             content=ft.Row([
                 ft.Text("Rango:", weight=ft.FontWeight.BOLD, size=14),
@@ -713,11 +713,18 @@ def vista_dashboard(page: ft.Page):
                 btn_fecha_fin,
                 btn_filtrar,
                 btn_limpiar
-            ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], 
+            alignment=ft.MainAxisAlignment.START, 
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            # 🔄 ¡ESTOS DOS CAMBIOS HACEN LA MAGIA EN EL TELÉFONO!
+            wrap=True,       # Hace que los botones salten abajo si no caben
+            run_spacing=10   # Agrega separación vertical cuando los botones se apilen
+            ),
             padding=10,
             bgcolor=ft.Colors.GREY_100,
             border_radius=8
         ),
+
         ft.Container(height=10),
         
         # Fila de Tarjetas de Métricas
