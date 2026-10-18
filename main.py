@@ -19,10 +19,11 @@ def inicializar_base_datos():
     
     conn = libsql.connect(database=db_url, auth_token=auth_token)
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON;")
-    
-    
-    # Tabla: Usuarios (Roles: 'master' o 'vendedor')
+    cursor.execute("PRAGMA foreign_keys = ON;") 
+
+
+  
+    # Tabla: Usuarios
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY,
@@ -31,57 +32,52 @@ def inicializar_base_datos():
         rol TEXT CHECK(rol IN ('master', 'vendedor')) NOT NULL
     );
     """)
-    # Insertar el usuario administrador por defecto si la tabla está vacía
     cursor.execute("INSERT OR IGNORE INTO usuarios (username, password, rol) VALUES ('admin', 'admin123', 'master');")
 
-    # Tabla: Inventario Individual por Vendedor (Para el control de vasos asignados)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS inventario_vendedores (
-        usuario_id INTEGER NOT NULL,
-        producto_id INTEGER NOT NULL,
-        stock_asignado INTEGER DEFAULT 0,
-        PRIMARY KEY (usuario_id, producto_id),
-        FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-        FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
-    );
-    """)
-
-
-
-    # Tabla: Productos (Inventario)
+    # Tabla: Productos (Inventario) - Modificada a REAL para peso y agregados campos de cajas/barras
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS productos (
-        id INTEGER PRIMARY KEY ,
+        codigo_barras TEXT PRIMARY KEY,
         nombre TEXT NOT NULL,
         precio_compra REAL NOT NULL,
         precio_venta REAL NOT NULL,
-        stock INTEGER DEFAULT 0,
-        stock_minimo INTEGER DEFAULT 5
+        stock REAL DEFAULT 0,
+        stock_minimo REAL DEFAULT 5,
+        unidad_medida TEXT CHECK(unidad_medida IN ('UNIDAD', 'KG', 'CAJA')) DEFAULT 'UNIDAD',
+        contenido_caja INTEGER DEFAULT 1,
+        precio_caja REAL DEFAULT 0
     );
     """)
     
-    # Tabla: Ventas (Cabecera)
+    # === REEMPLAZA ÚNICAMENTE ESTA SECCIÓN EN TU FUNCIÓN ORIGINAL ===
+    # Tabla: Ventas (Cabecera) - Modificada para incluir vendedor, referencia y conciliación
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ventas (
-        id INTEGER PRIMARY KEY ,
+        id INTEGER PRIMARY KEY,
         fecha_hora TEXT DEFAULT (datetime('now', 'localtime')),
         total REAL NOT NULL,
-        metodo_pago TEXT NOT NULL
+        metodo_pago TEXT NOT NULL,
+        vendedor TEXT,
+        referencia_pm TEXT,
+        conciliado INTEGER DEFAULT 0
     );
     """)
     
-    # Tabla: Detalles de Ventas
+    # Tabla: Detalles de Ventas - Modificada cantidad a REAL y vinculada a codigo_barras
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS detalles_ventas (
-        id INTEGER PRIMARY KEY ,
+        id INTEGER PRIMARY KEY,
         venta_id INTEGER NOT NULL,
-        producto_id INTEGER NOT NULL,
-        cantidad INTEGER NOT NULL,
+        producto_codigo TEXT NOT NULL,
+        cantidad REAL NOT NULL,
         precio_unitario REAL NOT NULL,
+        es_caja INTEGER DEFAULT 0,
         FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE,
-        FOREIGN KEY (producto_id) REFERENCES productos(id)
+        FOREIGN KEY (producto_codigo) REFERENCES productos(codigo_barras)
     );
     """)
+    
+
     
     # Tabla: Flujo de Caja (Ingresos y Egresos manuales)
     cursor.execute("""
@@ -106,6 +102,7 @@ def inicializar_base_datos():
     # Insertar tasa inicial de 1.00 si la tabla está vacía
     cursor.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('tasa_dolar', '1.00');")
 
+    
     conn.commit()
     return conn
 
@@ -115,76 +112,168 @@ def inicializar_base_datos():
 
 # --- CONSULTAS SQL ESPECÍFICAS ---
 
-
-
-def db_asignar_producto_a_vendedor(vendedor_name, producto_id, cantidad_a_asignar):
-    """Saca stock del inventario global y se lo asigna a un vendedor específico."""
+def db_insertar_producto(codigo_barras, nombre, p_compra, p_venta, stock, stock_min, unidad_medida='UNIDAD', contenido_caja=1, precio_caja=0.0):
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Inserta o actualiza un producto basándose estrictamente en su código de barras.
+    Soporta decimales para peso y configuraciones para cajas.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
+    
+    codigo_limpio = str(codigo_barras).strip()
+
+    # Buscamos si el código de barras ya existe en el sistema
+    cursor.execute("SELECT stock FROM productos WHERE codigo_barras = ?", (codigo_limpio,))
+    existente = cursor.fetchone()
+    
+    if existente:
+        # Si ya existe, actualiza los datos e incrementa el stock de forma decimal
+        stock_actual = existente[0]
+        nuevo_stock = float(stock_actual) + float(stock)
+        cursor.execute("""
+            UPDATE productos 
+            SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ?, 
+                unidad_medida = ?, contenido_caja = ?, precio_caja = ?
+            WHERE codigo_barras = ?
+        """, (nombre, p_compra, p_venta, nuevo_stock, stock_min, unidad_medida, contenido_caja, precio_caja, codigo_limpio))
+    else:
+        # Si es nuevo, lo registra directamente desde cero
+        cursor.execute("""
+            INSERT INTO productos (codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo, unidad_medida, contenido_caja, precio_caja) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (codigo_limpio, nombre, p_compra, p_venta, float(stock), stock_min, unidad_medida, contenido_caja, precio_caja))
+        
+    conn.commit()
+    conn.close()
+
+def db_importar_inventario_excel(ruta_archivo_excel):
+    """
+    Lee un archivo Excel sin dependencias externas e inserta o incrementa 
+    masivamente los productos en la base de datos unificada.
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import sqlite3
+
+    conn = inicializar_base_datos()
+    cursor = conn.cursor()
+    
+    # CORRECCIÓN 1: Namespace oficial y completo de OpenXML / Excel
+    ns = {"ns": "http://openxmlformats.org"}
+    
+    # Función auxiliar para convertir letras de Excel (A, B, AA) a índices (0, 1, 26) de forma segura
+    def letra_a_indice(letra):
+        num = 0
+        for char in letra.upper():
+            if char.isalpha():
+                num = num * 26 + (ord(char) - ord('A') + 1)
+        return num - 1
+
     try:
-        vendedor_name = str(vendedor_name).upper()
-        cantidad_a_asignar = int(cantidad_a_asignar)
+        cursor.execute("BEGIN TRANSACTION;")
         
-        # 1. Obtener el ID del usuario/vendedor basado en su nombre
-        cursor.execute("SELECT id FROM usuarios WHERE UPPER(username) = ?", (vendedor_name,))
-        usuario = cursor.fetchone()
-        if not usuario:
-            print(f"Error: El vendedor {vendedor_name} no existe en la tabla usuarios.")
-            return False
-        usuario_id = usuario[0]
+        with zipfile.ZipFile(ruta_archivo_excel, 'r') as z:
+            strings = []
+            
+            # Leer las cadenas de texto compartidas (Shared Strings)
+            if "xl/sharedStrings.xml" in z.namelist():
+                xml_content = z.read("xl/sharedStrings.xml")
+                root_strings = ET.fromstring(xml_content)
+                # Aplicamos el Namespace correcto en la búsqueda
+                for t in root_strings.findall(".//ns:t", ns):
+                    strings.append(t.text if t.text else "")
 
-        # 2. Verificar si hay suficiente stock global en el inventario general
-        cursor.execute("SELECT stock FROM productos WHERE id = ?", (producto_id,))
-        prod = cursor.fetchone()
-        if not prod or prod[0] < cantidad_a_asignar:
-            print("Error: No hay suficiente stock en el inventario global.")
-            return False
+            # Leer la primera hoja de cálculo
+            xml_content = z.read("xl/worksheets/sheet1.xml")
+            root_sheet = ET.fromstring(xml_content)
+            filas = root_sheet.findall(".//ns:row", ns)
+            
+            for idx, fila in enumerate(filas):
+                if idx == 0:
+                    continue  # Saltamos los títulos del Excel (Fila 1)
+                
+                valores_celdas = ["" for _ in range(9)]
+                celdas = fila.findall("ns:c", ns)
+                
+                for celda in celdas:
+                    ref = celda.get("r")
+                    if not ref:
+                        continue
+                    
+                    # Extraer solo las letras de la coordenada de la celda (Ej: "A2" -> "A")
+                    letra_columna = "".join([char for char in ref if char.isalpha()])
+                    idx_col = letra_a_indice(letra_columna)
+                    
+                    if 0 <= idx_col < 9:
+                        tipo = celda.get("t")
+                        valor_nodo = celda.find("ns:v", ns)
+                        
+                        if valor_nodo is not None:
+                            val = valor_nodo.text
+                            if tipo == "s" and val is not None:
+                                val = strings[int(val)]
+                            valores_celdas[idx_col] = val
 
-        # 3. Restar del inventario global (productos)
-        cursor.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (cantidad_a_asignar, producto_id))
+                # Procesamos únicamente si la fila contiene código de barras y nombre
+                if valores_celdas[0] and valores_celdas[1]:
+                    cod_b = str(valores_celdas[0]).strip()
+                    nom = str(valores_celdas[1]).strip()
+                    pc = float(valores_celdas[2]) if valores_celdas[2] else 0.0
+                    pv = float(valores_celdas[3]) if valores_celdas[3] else 0.0
+                    st = float(valores_celdas[4]) if valores_celdas[4] else 0.0
+                    sm = float(valores_celdas[5]) if valores_celdas[5] else 5.0
+                    
+                    u_medida = str(valores_celdas[6]).strip().upper() if valores_celdas[6] else "UNIDAD"
+                    if u_medida not in ["UNIDAD", "KG", "CAJA"]:
+                        u_medida = "UNIDAD"
+                        
+                    cont_c = int(valores_celdas[7]) if valores_celdas[7] else 1
+                    pr_caja = float(valores_celdas[8]) if valores_celdas[8] else 0.0
 
-        # 4. Sumar al inventario individual del vendedor (Si no existe el registro, se crea con INSERT OR IGNORE)
-        cursor.execute("""
-            INSERT OR IGNORE INTO inventario_vendedores (usuario_id, producto_id, stock_asignado)
-            VALUES (?, ?, 0)
-        """, (usuario_id, producto_id))
-        
-        cursor.execute("""
-            UPDATE inventario_vendedores 
-            SET stock_asignado = stock_asignado + ? 
-            WHERE usuario_id = ? AND producto_id = ?
-        """, (cantidad_a_asignar, usuario_id, producto_id))
+                    # LÓGICA SQL: Suma stock si existe, o crea si es nuevo
+                    cursor.execute("SELECT stock FROM productos WHERE codigo_barras = ?", (cod_b,))
+                    existente = cursor.fetchone()
+                    
+                    if existente:
+                        nuevo_stock = float(existente[0]) + st
+                        cursor.execute("""
+                            UPDATE productos 
+                            SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ?, 
+                                unidad_medida = ?, contenido_caja = ?, precio_caja = ?
+                            WHERE codigo_barras = ?
+                        """, (nom, pc, pv, nuevo_stock, sm, u_medida, cont_c, pr_caja, cod_b))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO productos (codigo_barras, nombre, precio_compra, precio_venta, stock, stock_minimo, unidad_medida, contenido_caja, precio_caja) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (cod_b, nom, pc, pv, st, sm, u_medida, cont_c, pr_caja))
 
         conn.commit()
         return True
     except Exception as e:
         conn.rollback()
-        print(f"Error al asignar vasos: {e}")
+        print(f"Error al importar archivo de inventario Excel: {e}")
         return False
     finally:
         conn.close()
 
-def db_obtener_stock_actual_vendedores():
-    """Devuelve una lista con los vasos que tiene actualmente cada vendedor en su puesto."""
+
+
+
+
+def db_obtener_productos():
     conn = inicializar_base_datos()
     cursor = conn.cursor()
-    datos = []
-    try:
-        cursor.execute("""
-            SELECT u.username, p.nombre, iv.stock_asignado 
-            FROM inventario_vendedores iv
-            JOIN usuarios u ON iv.usuario_id = u.id
-            JOIN productos p ON iv.producto_id = p.id
-            ORDER BY u.username ASC, p.id ASC
-        """)
-        datos = cursor.fetchall()
-    except Exception as e:
-        print(f"Error al obtener inventario de vendedores: {e}")
-    finally:
-        conn.close()
+    # Consulta directa y rápida de 9 columnas ordenadas por nombre
+    cursor.execute("""
+        SELECT codigo_barras, nombre, precio_compra, precio_venta, 
+               stock, stock_minimo, unidad_medida, contenido_caja, precio_caja 
+        FROM productos ORDER BY nombre ASC
+    """)
+    datos = cursor.fetchall()
+    conn.close()
     return datos
-
-
 
 
 def db_obtener_todos_usuarios():
@@ -205,7 +294,7 @@ def db_obtener_todos_usuarios():
 
 
 def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
-    """Suma las ventas en $ por cada vendedor convirtiendo la hora UTC a Venezuela (-4 horas)."""
+    """Suma las ventas en $ por cada vendedor """
     
     conn = inicializar_base_datos()
     cursor = conn.cursor()
@@ -214,9 +303,9 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
         query = "SELECT vendedor, SUM(total) FROM ventas"
         params = []
         
-        # SOLUCIÓN: Usamos datetime(fecha_hora, '-4 hours') para convertir UTC a hora de Venezuela
+        # SOLUCIÓN: Usamos datetime(fecha_hora) 
         if fecha_seleccionada:
-            query += " WHERE DATE(datetime(fecha_hora, '-4 hours')) = DATE(?)"
+            query += " WHERE DATE(datetime(fecha_hora)) = DATE(?)"
             params.append(fecha_seleccionada)
             
         query += " GROUP BY vendedor ORDER BY SUM(total) DESC"
@@ -235,6 +324,61 @@ def db_obtener_ventas_por_vendedor_historico(fecha_seleccionada=None):
     finally:
         conn.close()
     return reporte
+
+
+
+
+def db_eliminar_venta_y_reponer_inventario(id_venta):
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Elimina la venta y repone el stock de forma exacta sumando kilos decimales
+    o multiplicando las cajas devueltas por su contenido interno.
+    """
+    conn = inicializar_base_datos() 
+    cursor = conn.cursor()
+    try:
+        cursor.execute("BEGIN TRANSACTION;")
+
+        # 1. Obtener el código de barras, cantidad vendida y datos de caja cruzando con productos
+        cursor.execute("""
+            SELECT dv.producto_codigo, dv.cantidad, dv.es_caja, p.contenido_caja 
+            FROM detalles_ventas dv
+            JOIN productos p ON dv.producto_codigo = p.codigo_barras
+            WHERE dv.venta_id = ?
+        """, (id_venta,))
+        articulos = cursor.fetchall()
+
+        # 2. Devolver las cantidades reales calculadas al stock global
+        for prod_codigo, cantidad, es_caja, contenido_caja in articulos:
+            if es_caja == 1:
+                # Si se devolvió una caja, sumamos el equivalente en unidades individuales
+                unidades_reponer = float(cantidad) * int(contenido_caja)
+            else:
+                # Si fue por kilo o unidad regular, se devuelve la cantidad decimal directa
+                unidades_reponer = float(cantidad)
+                
+            cursor.execute("""
+                UPDATE productos 
+                SET stock = stock + ? 
+                WHERE codigo_barras = ?
+            """, (unidades_reponer, prod_codigo))
+
+        # 3. Eliminar los detalles de la venta
+        cursor.execute("DELETE FROM detalles_ventas WHERE venta_id = ?;", (id_venta,))
+
+        # 4. Eliminar la cabecera de la venta principal
+        cursor.execute("DELETE FROM ventas WHERE id = ?;", (id_venta,))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error al eliminar la venta {id_venta} e intentar reponer inventario: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 
 
 
@@ -324,12 +468,16 @@ def db_obtener_lista_vendedores():
 
 
 def db_obtener_resumen(fecha_inicio=None, fecha_fin=None):
+    """
+    MANTIENE TU LOGICA ORIGINAL CORREGIDA.
+    Calcula ventas, egresos y alertas de stock, adaptándose de forma exacta 
+    al nuevo esquema de inventario decimal (kilos y piezas).
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
     
-    # 1. CONSULTA DE VENTAS
+    # 1. CONSULTA DE VENTAS (Tus filtros de tiempo originales se mantienen idénticos)
     if fecha_inicio and fecha_fin:
-        # SQLite guarda "YYYY-MM-DD HH:MM:SS" en ventas, usamos date() para extraer solo la fecha
         query_ventas = "SELECT SUM(total) FROM ventas WHERE date(fecha_hora) BETWEEN ? AND ?;"
         cursor.execute(query_ventas, (fecha_inicio, fecha_fin))
     else:
@@ -350,67 +498,45 @@ def db_obtener_resumen(fecha_inicio=None, fecha_fin=None):
     res_e = cursor.fetchone()
     total_egresos = res_e[0] if res_e and res_e[0] is not None else 0.0
     
-    # 3. ALERTA DE STOCK (Mantenido global e independiente del tiempo)
-    cursor.execute("SELECT COUNT(*) FROM productos WHERE stock <= stock_minimo;")
+    # 3. ALERTA DE STOCK MODIFICADA
+    # Forzamos a SQLite a evaluar los campos como números reales (REAL) para evitar fallas por decimales flotantes en Kg
+    cursor.execute("SELECT COUNT(*) FROM productos WHERE CAST(stock AS REAL) <= CAST(stock_minimo AS REAL);")
     res_a = cursor.fetchone()
     p_alerta = res_a[0] if res_a and res_a[0] is not None else 0
     
     conn.close()
     return total_ventas, total_egresos, (total_ventas - total_egresos), p_alerta
 
-def db_insertar_producto(nombre, p_compra, p_venta, stock, stock_min):
-    conn = inicializar_base_datos()
-    cursor = conn.cursor()
-    
-    # Verificar si el producto ya existe (ignorando mayúsculas/minúsculas)
-    cursor.execute("SELECT id, stock FROM productos WHERE LOWER(nombre) = LOWER(?)", (nombre,))
-    existente = cursor.fetchone()
-    
-    if existente:
-        # Si ya existe, actualiza el stock sumando el nuevo, y actualiza los precios
-        id_p, stock_actual = existente
-        nuevo_stock = stock_actual + stock
-        cursor.execute("""
-            UPDATE productos 
-            SET precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ? 
-            WHERE id = ?
-        """, (p_compra, p_venta, nuevo_stock, stock_min, id_p))
-    else:
-        # Si no existe, lo crea desde cero
-        cursor.execute("""
-            INSERT INTO productos (nombre, precio_compra, precio_venta, stock, stock_minimo) 
-            VALUES (?, ?, ?, ?, ?)
-        """, (nombre, p_compra, p_venta, stock, stock_min))
-        
-    conn.commit()
-    conn.close()
 
 
-def db_actualizar_producto(id_p, nombre, p_compra, p_venta, stock, stock_min):
+def db_actualizar_producto(codigo_barras, nombre, p_compra, p_venta, stock, stock_min, unidad_medida='UNIDAD', contenido_caja=1, precio_caja=0.0):
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Actualiza un producto basándose en su código de barras único.
+    Soporta stock decimal (Kg) y los parámetros correspondientes para cajas.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE productos 
-        SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ? 
-        WHERE id = ?
-    """, (nombre, p_compra, p_venta, stock, stock_min, id_p))
+        SET nombre = ?, precio_compra = ?, precio_venta = ?, stock = ?, stock_minimo = ?, 
+            unidad_medida = ?, contenido_caja = ?, precio_caja = ?
+        WHERE codigo_barras = ?
+    """, (nombre, p_compra, p_venta, float(stock), float(stock_min), unidad_medida, contenido_caja, precio_caja, str(codigo_barras).strip()))
     conn.commit()
     conn.close()
 
-def db_eliminar_producto(id_p):
+def db_eliminar_producto(codigo_barras):
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Elimina permanentemente un producto del inventario usando su código de barras único.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM productos WHERE id = ?", (id_p,))
+    cursor.execute("DELETE FROM productos WHERE codigo_barras = ?", (str(codigo_barras).strip(),))
     conn.commit()
     conn.close()
 
-def db_obtener_productos():
-    conn = inicializar_base_datos()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre, precio_compra, precio_venta, stock, stock_minimo FROM productos ORDER BY nombre ASC")
-    datos = cursor.fetchall()
-    conn.close()
-    return datos
 
 
 
@@ -419,121 +545,76 @@ def db_buscar_producto_venta(termino):
 
     
 def db_registrar_venta_completa(carrito, total, metodo, vendedor_name, referencia_pm=None):
-    """Registra la venta y descuenta los vasos directamente de la asignación del vendedor."""
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Registra de forma atómica la cabecera, los detalles de la venta y descuenta
+    el stock decimal (Kg o piezas) del inventario basándose en el código de barras.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
     try:
-        # --- ASEGURAR COLUMNAS (Formato correcto para Turso/libsql) ---
-        try: 
-            cursor.execute("ALTER TABLE ventas ADD COLUMN vendedor TEXT DEFAULT 'ADMIN';")
-            conn.commit()
-        except Exception as e: 
-            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise e
-
-        try: 
-            cursor.execute("ALTER TABLE ventas ADD COLUMN referencia_pm TEXT DEFAULT '';")
-            conn.commit()
-        except Exception as e: 
-            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise e
-
-        try: 
-            cursor.execute("ALTER TABLE ventas ADD COLUMN conciliado INTEGER DEFAULT 0;")
-            conn.commit()
-        except Exception as e: 
-            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise e
-        # ---------------------------------------------------------------
-
+        cursor.execute("BEGIN TRANSACTION;")
         vendedor_limpio = str(vendedor_name).upper()
 
-        # 1. Insertar la cabecera de la venta
+        # 1. Insertar la cabecera de la venta limpia
         cursor.execute(
             "INSERT INTO ventas (total, metodo_pago, vendedor, referencia_pm, conciliado) VALUES (?, ?, ?, ?, 0)", 
             (float(total), metodo, vendedor_limpio, str(referencia_pm or ""))
         )
         v_id = cursor.lastrowid
         
-        # 2. Buscar el id del vendedor para poder descontar de su inventario asignado
-        cursor.execute("SELECT id FROM usuarios WHERE UPPER(username) = ?", (vendedor_limpio,))
-        usuario_row = cursor.fetchone()
-        usuario_id = usuario_row[0] if usuario_row else None
-
-        # 3. Procesar los artículos del carrito
+        # 2. Procesar los artículos del carrito con la estructura compatible de objetos
         for item in carrito:
-            id_p = int(item[0])
+            # Estructura que le pasa la interfaz: [cod_barras, nombre, precio, cantidad, es_caja, descontar_unidades]
+            cod_barras = str(item[0]).strip()
             precio_u = float(item[2])
-            cantidad = int(item[3])
+            cantidad_vendida = float(item[3])
+            es_caja = int(item[4])
+            descontar_unidades = float(item[5])
 
-            # Insertar en el detalle de la venta
+            # Insertar en el detalle de la venta registrando la modalidad (es_caja) y el código de barras
             cursor.execute("""
-                INSERT INTO detalles_ventas (venta_id, producto_id, cantidad, precio_unitario) 
-                VALUES (?, ?, ?, ?)
-            """, (v_id, id_p, cantidad, precio_u))
+                INSERT INTO detalles_ventas (venta_id, producto_codigo, cantidad, precio_unitario, es_caja) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (v_id, cod_barras, cantidad_vendida, precio_u, es_caja))
             
-            # DESCUENTO INTELIGENTE:
-            if usuario_id:
-                # Si el usuario tiene asignación en el puesto, se le resta a él
-                cursor.execute("""
-                    UPDATE inventario_vendedores 
-                    SET stock_asignado = stock_asignado - ? 
-                    WHERE usuario_id = ? AND producto_id = ?
-                """, (cantidad, usuario_id, id_p))
-            else:
-                # Si vende un usuario sin asignar, descuenta del global
-                cursor.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (cantidad, id_p))
+            # Descuenta directamente del inventario único/global aplicando la cantidad equivalente
+            cursor.execute("""
+                UPDATE productos 
+                SET stock = stock - ? 
+                WHERE codigo_barras = ?
+            """, (descontar_unidades, cod_barras))
             
         conn.commit()
         return True
     except Exception as e:
         conn.rollback()
-        print(f"Error en base de datos al vender: {e}")
+        print(f"Error en base de datos al registrar la venta completa: {e}")
         return False
     finally:
         conn.close()
 
 
 
-
 def db_obtener_historial_ventas():
-    """Trae las ventas de forma segura adaptándose al nombre real de la columna de fecha y convirtiendo UTC a Venezuela."""
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Trae el historial completo de ventas de forma directa, rápida y limpia,
+    aprovechando la estructura nativa fija de la nueva base de datos.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
     datos = []
     try:
-        # --- ASEGURAR COLUMNAS (Formato correcto para Turso/libsql) ---
-        try: 
-            cursor.execute("ALTER TABLE ventas ADD COLUMN referencia_pm TEXT DEFAULT '';")
-            conn.commit()
-        except Exception as e: 
-            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise e
-
-        try: 
-            cursor.execute("ALTER TABLE ventas ADD COLUMN conciliado INTEGER DEFAULT 0;")
-            conn.commit()
-        except Exception as e: 
-            if "duplicate" not in str(e).lower() and "already exists" not in str(e).lower():
-                raise e
-        # ---------------------------------------------------------------
-        
-        # INTENTO 1: Probamos con 'fecha_hora' aplicando la resta de 4 horas
-        try:
-            cursor.execute("SELECT id, datetime(fecha_hora, '-4 hours'), total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
-            datos = cursor.fetchall()
-        except Exception as e:
-            # Si el error es porque no encuentra la columna 'fecha_hora', pasamos al INTENTO 2
-            if "no such column" in str(e).lower() or "has no column" in str(e).lower():
-                # INTENTO 2: Si falla por el nombre, probamos con 'fecha' aplicando también la resta de 4 horas
-                cursor.execute("SELECT id, datetime(fecha, '-4 hours'), total, metodo_pago, vendedor, referencia_pm, conciliado FROM ventas ORDER BY id DESC")
-                datos = cursor.fetchall()
-            else:
-                # Si fue otro tipo de error diferente al nombre de la columna, lo relanzamos
-                raise e
-            
+        # Consulta limpia y directa sin reintentos innecesarios
+        cursor.execute("""
+            SELECT id, datetime(fecha_hora), total, metodo_pago, vendedor, referencia_pm, conciliado 
+            FROM ventas 
+            ORDER BY id DESC
+        """)
+        datos = cursor.fetchall()
     except Exception as e:
-        print(f"Error definitivo en consulta de historial: {e}")
+        print(f"Error en consulta de historial de ventas: {e}")
         datos = []
     finally:
         conn.close()
@@ -581,18 +662,67 @@ def db_actualizar_tasa_dolar(nueva_tasa):
 
 
 def db_obtener_detalles_productos_venta(venta_id):
+    """
+    REEMPLAZA A LA FUNCIÓN VIEJA.
+    Vincula los detalles con la tabla de productos usando el código de barras
+    para traer el nombre correcto de los artículos facturados en el historial.
+    """
     conn = inicializar_base_datos()
     cursor = conn.cursor()
-    # Vincula los detalles con la tabla de productos para traer el nombre
     cursor.execute("""
         SELECT p.nombre, dv.cantidad, dv.precio_unitario 
         FROM detalles_ventas dv
-        JOIN productos p ON dv.producto_id = p.id
+        JOIN productos p ON dv.producto_codigo = p.codigo_barras
         WHERE dv.venta_id = ?
     """, (venta_id,))
     datos = cursor.fetchall()
     conn.close()
     return datos
+
+
+def db_reporte_flotante_ganancias(fecha_filtro):
+    """
+    Calcula la ganancia bruta y los métodos de pago para un único día específico.
+    """
+    import sqlite3
+    conn = inicializar_base_datos()
+    cursor = conn.cursor()
+    
+    # 1. Consulta de ganancia bruta real cruzando con el precio_compra de productos
+    query_ganancia = """
+        SELECT 
+            SUM(dv.cantidad * dv.precio_unitario) - SUM(dv.cantidad * p.precio_compra)
+        FROM detalles_ventas dv
+        JOIN ventas v ON dv.venta_id = v.id
+        JOIN productos p ON dv.producto_codigo = p.codigo_barras
+        WHERE date(v.fecha_hora) = date(?);
+    """
+    cursor.execute(query_ganancia, (fecha_filtro,))
+    res_g = cursor.fetchone()
+    ganancia = res_g[0] if res_g and res_g[0] is not None else 0.0
+
+    # 2. Consulta de desgloses de métodos de pago
+    query_metodos = """
+        SELECT metodo_pago, SUM(total) 
+        FROM ventas 
+        WHERE date(fecha_hora) = date(?) 
+        GROUP BY metodo_pago;
+    """
+    cursor.execute(query_metodos, (fecha_filtro,))
+    res_m = cursor.fetchall()
+    conn.close()
+    
+    # Mapeo seguro en diccionario para CELER
+    dicc_metodos = {"EFECTIVO": 0.0, "PUNTO": 0.0, "PAGO MOVIL": 0.0}
+    for fila in res_m:
+        metodo, monto = fila
+        if metodo and metodo.upper() in dicc_metodos:
+            dicc_metodos[metodo.upper()] = float(monto) if monto is not None else 0.0
+            
+    return ganancia, dicc_metodos
+
+
+
 
 # =====================================================================
 # 2. PARTE: INTERFACES GRÁFICAS DE LAS PANTALLAS (VISTAS)
@@ -699,12 +829,103 @@ def vista_dashboard(page: ft.Page):
     # Carga inicial de datos históricos globales
     refrescar_metricas()
 
+
+
+    # Variables de estado internas para el diálogo flotante
+    import datetime
+    fecha_reporte_val = datetime.date.today().strftime("%Y-%m-%d")
+
+    # Controles visuales del reporte flotante
+    lbl_float_titulo = ft.Text(f"Auditoría: {datetime.date.today().strftime('%d/%m/%Y')}", weight=ft.FontWeight.BOLD, size=15)
+    lbl_float_ganancia = ft.Text("$0.00 (0.00 Bs.)", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700)
+    lbl_float_efectivo = ft.Text("$0.00 (0.00 Bs.)", size=18, weight=ft.FontWeight.W_500)
+    lbl_float_punto = ft.Text("$0.00 (0.00 Bs.)", size=18, weight=ft.FontWeight.W_500)
+    lbl_float_pago_movil = ft.Text("$0.00 (0.00 Bs.)", size=18, weight=ft.FontWeight.W_500)
+
+    def refrescar_reporte_flotante(fecha_a_consultar):
+        try:
+            tasa = float(db_obtener_tasa_dolar())
+        except Exception:
+            tasa = 1.0
+            
+        # 📍 Le pasamos directamente la fecha que recibe por parámetro
+        ganancia, metodos = db_reporte_flotante_ganancias(fecha_a_consultar)
+        
+        # Asignamos los valores calculados a las etiquetas correspondientes
+        lbl_float_ganancia.value = f"${ganancia:.2f} ({ganancia * tasa:.2f} Bs.)"
+        lbl_float_efectivo.value = f"${metodos['EFECTIVO']:.2f} ({metodos['EFECTIVO'] * tasa:.2f} Bs.)"
+        lbl_float_punto.value = f"${metodos['PUNTO']:.2f} ({metodos['PUNTO'] * tasa:.2f} Bs.)"
+        lbl_float_pago_movil.value = f"${metodos['PAGO MOVIL']:.2f} ({metodos['PAGO MOVIL'] * tasa:.2f} Bs.)"
+        page.update()
+
+    def al_cambiar_fecha_reporte(e):
+        nonlocal fecha_reporte_val
+        if e.control.value:
+            # 📍 Guardamos la fecha seleccionada en formato correcto para la BD
+            fecha_reporte_val = e.control.value.strftime("%Y-%m-%d")
+            lbl_float_titulo.value = f"Auditoría: {e.control.value.strftime('%d/%m/%Y')}"
+            lbl_float_titulo.update()
+            
+            # 📍 Forzamos la consulta pasando directamente la nueva fecha elegida
+            refrescar_reporte_flotante(fecha_reporte_val)
+
+    picker_reporte = ft.DatePicker(on_change=al_cambiar_fecha_reporte)
+    page.overlay.append(picker_reporte)
+
+    # Ventana de diálogo flotante estructurada (Se mantiene intacta)
+    dialogo_reporte = ft.AlertDialog(
+        title=ft.Row([ft.Icon(ft.Icons.ANALYTICS_ROUNDED, color=ft.Colors.BLUE_800), ft.Text("Reporte Diario de Utilidades", size=16, weight=ft.FontWeight.BOLD)]),
+        content=ft.Column([
+            ft.Row([lbl_float_titulo, ft.IconButton(icon=ft.Icons.CALENDAR_MONTH, on_click=lambda _: page.show_dialog(picker_reporte) if hasattr(page, "show_dialog") else page.open(picker_reporte))]),
+            ft.Divider(),
+            ft.Text("GANANCIA BRUTA REAL:", size=16, color="grey", weight="bold"),
+            lbl_float_ganancia,
+            ft.Container(height=10),
+            ft.Text("DESGLOSE POR MÉTODOS:", size=14, color="grey", weight="bold"),
+            ft.ListTile(leading=ft.Icon(ft.Icons.MONEY, color="green"), title=ft.Text("Efectivo"), trailing=lbl_float_efectivo, dense=True),
+            ft.ListTile(leading=ft.Icon(ft.Icons.CREDIT_CARD, color="blue"), title=ft.Text("Punto"), trailing=lbl_float_punto, dense=True),
+            ft.ListTile(leading=ft.Icon(ft.Icons.PHONELINK_RING, color="purple"), title=ft.Text("Pago Móvil"), trailing=lbl_float_pago_movil, dense=True),
+        ], tight=True, width=320),
+        actions=[ft.TextButton("Cerrar", on_click=lambda e: setattr(dialogo_reporte, "open", False) or page.update())],
+        actions_alignment=ft.MainAxisAlignment.END
+    )
+    page.overlay.append(dialogo_reporte)
+
+    def abrir_modal_reporte(e):
+        import datetime
+        nonlocal fecha_reporte_val
+        # Seteamos por defecto el día de hoy al abrir
+        fecha_reporte_val = datetime.date.today().strftime("%Y-%m-%d")
+        lbl_float_titulo.value = f"Auditoría: {datetime.date.today().strftime('%d/%m/%Y')}"
+        
+        dialogo_reporte.open = True
+        page.update()
+        
+        # 📍 Forzamos la consulta inicial pasándole la fecha de hoy
+        refrescar_reporte_flotante(fecha_reporte_val)
+
+    # Botón disparador del reporte
+    btn_abrir_reporte = ft.ElevatedButton(
+        "📊 Ver Utilidad y Cierre", 
+        icon=ft.Icons.INSERT_CHART_OUTLINED_ROUNDED, 
+        on_click=abrir_modal_reporte, 
+        bgcolor=ft.Colors.GREEN_700, 
+        color=ft.Colors.WHITE
+    )
+
+
+
+
+
+
     return ft.Column([
         ft.Text("📊 Tablero de Control / Finanzas", size=26, weight=ft.FontWeight.BOLD),
-        ft.Text("Resumen analítico de las finanzas. Filtra por rango para auditar periodos específicos.", size=14, color=ft.Colors.GREY_700),
+        ft.Text("Resumen analítico de las finanzas. Filtra por rango para auditar periodos específicos.", size=15, color=ft.Colors.GREY_700),
         ft.Divider(),
         
+        # Nueva Fila de Filtros de Fecha
 # --- REEMPLAZA TU CONTENEDOR DE FILTROS POR ESTE ---
+        # Busca este contenedor exacto en tu return original y déjalo configurado así:
         ft.Container(
             content=ft.Row([
                 ft.Text("Rango:", weight=ft.FontWeight.BOLD, size=14),
@@ -712,13 +933,14 @@ def vista_dashboard(page: ft.Page):
                 ft.Text("al"),
                 btn_fecha_fin,
                 btn_filtrar,
-                btn_limpiar
+                btn_limpiar,
+                # ➕ AGREGAMOS EL NUEVO BOTÓN FLOTANTE AL FINAL DE LA FILA:
+                btn_abrir_reporte 
             ], 
             alignment=ft.MainAxisAlignment.START, 
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            # 🔄 ¡ESTOS DOS CAMBIOS HACEN LA MAGIA EN EL TELÉFONO!
-            wrap=True,       # Hace que los botones salten abajo si no caben
-            run_spacing=10   # Agrega separación vertical cuando los botones se apilen
+            wrap=True,       
+            run_spacing=10   
             ),
             padding=10,
             bgcolor=ft.Colors.GREY_100,
@@ -749,87 +971,167 @@ def vista_dashboard(page: ft.Page):
         )
     ], expand=True, scroll=ft.ScrollMode.ALWAYS) # <-- Este cierre ahora le pertenece a la Column principal de la vista
 
-# --- PANTALLA 2: INVENTARIO CON DOBLE MONEDA (BLINDADO MATEMÁTICAMENTE) ---
+# --- PANTALLA 2: INVENTARIO COMPLETO UNIFICADO Y FILTRABLE (PARTE 1 CORREGIDA) ---
 def vista_inventario(page: ft.Page):
     page.floating_action_button = None
     page.update()
 
-    producto_id_editar = None
+    # DIÁLOGO GLOBAL PERSISTENTE PARA CONFIRMACIONES EN FLET 0.85/0.86
+    def cerrar_dialogo_inv(e=None):
+        dialogo_comun_inv.open = False
+        page.update()
 
+    dialogo_comun_inv = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Aviso del Sistema"),
+        content=ft.Text("Procesando información..."),
+        actions=[
+            ft.TextButton("Ok", on_click=cerrar_dialogo_inv)
+        ],
+        actions_alignment=ft.MainAxisAlignment.END
+    )
+    page.overlay.append(dialogo_comun_inv)
+
+    # Variable de estado que ahora guarda el código de barras del producto que se está editando
+    producto_codigo_editar = None
+
+    # Controles del formulario principal
+    txt_codigo_barras = ft.TextField(label="Código de Barras", dense=True, hint_text="Escanee o ingrese un código único")
     txt_nombre = ft.TextField(label="Producto", dense=True)
     txt_p_compra = ft.TextField(label="Costo ($)", dense=True, hint_text="Ej: 10.50") 
     txt_p_venta = ft.TextField(label="Venta ($)", dense=True, hint_text="Ej: 15.00")  
     txt_stock = ft.TextField(label="Stock", value="0", keyboard_type=ft.KeyboardType.NUMBER, dense=True)
     txt_stock_min = ft.TextField(label="Mín.", value="5", keyboard_type=ft.KeyboardType.NUMBER, dense=True)
 
+    # Controles dinámicos específicos para la modalidad de CAJAS
+    txt_contenido_caja = ft.TextField(label="Contenido por Caja", value="1", keyboard_type=ft.KeyboardType.NUMBER, dense=True)
+    txt_precio_caja = ft.TextField(label="Precio por Caja ($)", value="0.00", dense=True)
+
+    # Contenedor visual que oculta o muestra los campos de la caja de forma dinámica
+    panel_caja = ft.Row([
+        ft.Container(txt_contenido_caja, expand=True),
+        ft.Container(txt_precio_caja, expand=True)
+    ], visible=False, spacing=10)
+
+    # Dropdown reactivo para seleccionar la unidad de medida del producto
+    def al_cambiar_unidad_medida(e):
+        # El panel de cajas se vuelve visible ÚNICAMENTE si seleccionan la opción CAJA
+        panel_caja.visible = (dd_unidad.value == "CAJA")
+        page.update()
+
+    dd_unidad = ft.Dropdown(
+        label="Medida",
+        options=[
+            ft.dropdown.Option("UNIDAD"),
+            ft.dropdown.Option("KG"),
+            ft.dropdown.Option("CAJA")
+        ],
+        value="UNIDAD",
+        dense=True
+    )
+    dd_unidad.on_change = al_cambiar_unidad_medida
+
     lista_productos_movil = ft.ListView(expand=True, spacing=5)
 
     def limpiar_campos():
-        nonlocal producto_id_editar
-        producto_id_editar = None
+        nonlocal producto_codigo_editar
+        producto_codigo_editar = None
+        txt_codigo_barras.disabled = False  # Reactivamos el campo de código para nuevas inserciones
+        txt_codigo_barras.value = ""
         txt_nombre.value = ""
         txt_p_compra.value = ""
         txt_p_venta.value = ""
         txt_stock.value = "0"
         txt_stock_min.value = "5"
+        dd_unidad.value = "UNIDAD"
+        txt_contenido_caja.value = "1"
+        txt_precio_caja.value = "0.00"
+        panel_caja.visible = False
+        
         btn_guardar.content = ft.Text("Añadir")
         btn_guardar.icon = ft.Icons.ADD
         btn_guardar.bgcolor = ft.Colors.GREEN
         btn_cancelar.visible = False
         page.update()
 
-    def actualizar():
+        forzar_foco_inventario(txt_codigo_barras)
+
+    def al_buscar_inventario(e):
+        renderizar_tarjetas_filtradas()
+
+    txt_buscar_inv = ft.TextField(
+        label="Buscar producto en almacén...",
+        prefix_icon=ft.Icons.SEARCH,
+        dense=True,
+        on_change=al_buscar_inventario
+    )
+
+    def renderizar_tarjetas_filtradas():
         lista_productos_movil.controls.clear()
         tasa = float(db_obtener_tasa_dolar())
+        texto_busqueda = txt_buscar_inv.value.lower().strip() if txt_buscar_inv.value else ""
         
-        for prod in db_obtener_productos():
-            id_p, nombre, p_compra, p_venta, stock, stock_min = prod
-            en_alerta = int(stock) <= int(stock_min)
+        lista_productos_db = txt_buscar_inv.data if txt_buscar_inv.data else []
+        
+        for prod in lista_productos_db:
+            # Desempaquetamos de forma exacta los 9 valores devueltos por el nuevo backend unificado
+            c_barras, nombre, p_compra, p_venta, stock, stock_min, u_medida, cont_caja, p_caja = prod
             
+            if texto_busqueda and texto_busqueda not in nombre.lower() and texto_busqueda not in str(c_barras).lower():
+                continue
+                
+            # Evaluamos las alertas soportando los stocks de tipo decimal (Kg)
+            en_alerta = float(stock) <= float(stock_min)
             precio_dolar = float(p_venta)
             p_venta_bs = precio_dolar * tasa
             col_stock = ft.Colors.RED_700 if en_alerta else ft.Colors.GREEN_700
             
-            id_actual = id_p
-            nombre_actual = nombre
+            # Formateamos el indicativo de stock visual en la tarjeta
+            stock_visual = f"{stock:.3f} Kg" if u_medida == "KG" else f"{int(stock)} un"
+            
+            # Variables de contexto actual para la acción de los botones de edición
+            cb_actual = str(c_barras)
+            n_actual = nombre
             pc_actual = float(p_compra)
             pv_actual = precio_dolar
-            st_actual = int(stock)
-            sm_actual = int(stock_min)
+            st_actual = float(stock)
+            sm_actual = float(stock_min)
+            um_actual = str(u_medida)
+            cc_actual = int(cont_caja)
+            prc_actual = float(p_caja)
 
             lista_productos_movil.controls.append(
                 ft.Card(
                     content=ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.INVENTORY_2, color=col_stock, size=24),
+                            ft.Icon(ft.Icons.SCALE if u_medida == "KG" else ft.Icons.INVENTORY_2, color=col_stock, size=24),
                             ft.Column([
                                 ft.Text(str(nombre), weight=ft.FontWeight.BOLD, size=14),
-                                ft.Text(f"Costo: ${pc_actual:.2f} | Mín: {sm_actual}", size=11, color=ft.Colors.GREY_600)
+                                ft.Text(f"Ref: {cb_actual} | Costo: ${pc_actual:.2f} | Mín: {sm_actual}", size=14, color=ft.Colors.GREY_600)
                             ], spacing=2, expand=True),
                             ft.Column([
-                                ft.Text(f"${pv_actual:.2f}", weight=ft.FontWeight.BOLD, size=14, color=ft.Colors.BLUE_900),
-                                ft.Text(f"{p_venta_bs:.1f} Bs.", size=11, color=ft.Colors.GREY_700)
+                                ft.Text(f"${pv_actual:.2f}", weight=ft.FontWeight.BOLD, size=15, color=ft.Colors.BLUE_900),
+                                ft.Text(f"{p_venta_bs:.1f} Bs.", size=14, color=ft.Colors.GREY_700)
                             ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
                             ft.Row([
                                 ft.IconButton(
                                     icon=ft.Icons.EDIT,
                                     icon_color=ft.Colors.BLUE_500,
                                     icon_size=18,
-                                    on_click=lambda e, idx=id_actual, n=nombre_actual, pc=pc_actual, pv=pv_actual, s=st_actual, sm=sm_actual: preparar_edicion(idx, n, pc, pv, s, sm)
+                                    on_click=lambda e, cb=cb_actual, n=n_actual, pc=pc_actual, pv=pv_actual, s=st_actual, sm=sm_actual, um=um_actual, cc=cc_actual, prc=prc_actual: preparar_edicion(cb, n, pc, pv, s, sm, um, cc, prc)
                                 ),
                                 ft.IconButton(
                                     icon=ft.Icons.DELETE,
                                     icon_color=ft.Colors.RED_500,
                                     icon_size=18,
-                                    on_click=lambda e, idx=id_actual, n=nombre_actual: abrir_confirmacion_borrado(idx, n)
+                                    on_click=lambda e, cb=cb_actual, n=n_actual: abrir_confirmacion_borrado(cb, n)
                                 )
                             ], spacing=0, alignment=ft.MainAxisAlignment.END),
                             ft.Container(
-                                content=ft.Text(str(stock), color=ft.Colors.WHITE, size=11, weight=ft.FontWeight.BOLD),
+                                content=ft.Text(stock_visual, color=ft.Colors.WHITE, size=14, weight=ft.FontWeight.BOLD),
                                 bgcolor=col_stock,
-                                padding=ft.Padding(8, 4, 8, 4), 
-                                border_radius=12,
-                                margin=ft.Margin(5, 0, 0, 0)
+                                padding=5, 
+                                border_radius=12
                             )
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         padding=10
@@ -839,66 +1141,224 @@ def vista_inventario(page: ft.Page):
             )
         page.update()
 
-    def preparar_edicion(id_p, nombre, p_compra, p_venta, stock, stock_min):
-        nonlocal producto_id_editar
-        producto_id_editar = id_p
+# --- PANTALLA 2: INVENTARIO COMPLETO UNIFICADO Y FILTRABLE (PARTE 2 CORREGIDA) ---
+# Pega esto exactamente debajo de la primera parte, conservando la indentación de la vista principal.
+
+    def actualizar():
+        try:
+            txt_buscar_inv.data = db_obtener_productos()
+        except Exception:
+            txt_buscar_inv.data = []
+            
+        renderizar_tarjetas_filtradas()
+
+    def preparar_edicion(codigo_barras, nombre, p_compra, p_venta, stock, stock_min, unidad_medida, contenido_caja, precio_caja):
+        nonlocal producto_codigo_editar
+        producto_codigo_editar = codigo_barras
+        
+        txt_codigo_barras.value = str(codigo_barras)
+        txt_codigo_barras.disabled = True  # Bloqueamos el ID clave para evitar alteraciones en caliente
+        
         txt_nombre.value = str(nombre)
         txt_p_compra.value = str(p_compra)
         txt_p_venta.value = str(p_venta)
         txt_stock.value = str(stock)
         txt_stock_min.value = str(stock_min)
+        dd_unidad.value = str(unidad_medida)
+        txt_contenido_caja.value = str(contenido_caja)
+        txt_precio_caja.value = str(precio_caja)
+        
+        # Sincronizamos la visibilidad del panel inferior de cajas automáticamente
+        panel_caja.visible = (unidad_medida == "CAJA")
+        
         btn_guardar.content = ft.Text("Actualizar")
         btn_guardar.icon = ft.Icons.SAVE
         btn_guardar.bgcolor = ft.Colors.BLUE_800
         btn_cancelar.visible = True
         page.update()
 
-    def abrir_confirmacion_borrado(id_p, nombre_p):
+    def abrir_confirmacion_borrado(codigo_barras, nombre_p):
         def confirmar(e):
-            db_eliminar_producto(id_p)
-            dialogo.open = False
-            page.update()
+            db_eliminar_producto(codigo_barras)
+            cerrar_dialogo_inv()
             actualizar()
 
-        def cancelar(e):
-            dialogo.open = False
-            page.update()
-
-        dialogo = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Confirmar Eliminación"),
-            content=ft.Text(f"¿De verdad deseas borrar '{nombre_p}' del inventario?"),
-            actions=[
-                ft.TextButton("Cancelar", on_click=cancelar),
-                ft.ElevatedButton(content=ft.Text("Eliminar"), bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=confirmar),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-        page.overlay.append(dialogo)
-        dialogo.open = True
+        dialogo_comun_inv.title = ft.Text("Confirmar Eliminación")
+        dialogo_comun_inv.content = ft.Text(f"¿De verdad deseas borrar '{nombre_p}' del inventario?")
+        dialogo_comun_inv.actions = [
+            ft.TextButton("Cancelar", on_click=cerrar_dialogo_inv),
+            ft.ElevatedButton(content=ft.Text("Eliminar"), bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=confirmar),
+        ]
+        dialogo_comun_inv.actions_alignment = ft.MainAxisAlignment.END
+        dialogo_comun_inv.open = True
         page.update()
 
     def guardar_click(e):
-        if not all([txt_nombre.value, txt_p_compra.value, txt_p_venta.value, txt_stock.value, txt_stock_min.value]): 
+        if not all([txt_codigo_barras.value, txt_nombre.value, txt_p_compra.value, txt_p_venta.value, txt_stock.value, txt_stock_min.value]): 
             return
         try:
+            cod_b = txt_codigo_barras.value.strip()
             nom = txt_nombre.value.strip()
             costo_texto = txt_p_compra.value.strip().replace(",", ".")
             venta_texto = txt_p_venta.value.strip().replace(",", ".")
             pc = float(costo_texto)
             pv = float(venta_texto)
-            st = int(txt_stock.value.strip())
-            sm = int(txt_stock_min.value.strip())
+            
+            # Leemos la cantidad que el usuario digitó en la caja de texto
+            cantidad_ingresada = float(txt_stock.value.strip()) if txt_stock.value.strip() else 0.0
+            sm = float(txt_stock_min.value.strip())
+            
+            u_medida = dd_unidad.value
+            cont_c = int(txt_contenido_caja.value.strip()) if u_medida == "CAJA" else 1
+            pr_caja = float(txt_precio_caja.value.strip().replace(",", ".")) if u_medida == "CAJA" else 0.0
 
-            if producto_id_editar is not None:
-                db_actualizar_producto(producto_id_editar, nom, pc, pv, st, sm)
+            if producto_codigo_editar is not None:
+                # --- ¡AQUÍ ESTÁ EL CAMBIO DE SUMA! ---
+                # Buscamos cuánto stock tenía previamente guardado este producto en el catálogo en caché
+                stock_previo = 0.0
+                lista_productos_db = txt_buscar_inv.data if txt_buscar_inv.data else []
+                for prod in lista_productos_db:
+                    if str(prod[0]).lower() == cod_b.lower():
+                        stock_previo = float(prod[4])  # prod[4] es la posición del stock actual
+                        break
+                
+                # Si entramos por el escáner (el campo comenzó vacío), SUMAMOS la nueva mercancía.
+                # Si entramos dándole clic al botón azul de EDITAR de la tarjeta (el campo traía el número completo),
+                # evaluamos si el valor cambió o si queremos mantener el comportamiento de edición directa.
+                # Para asegurar que la carga sume siempre, consolidamos el nuevo stock total:
+                st = stock_previo + cantidad_ingresada
+                
+                db_actualizar_producto(cod_b, nom, pc, pv, st, sm, u_medida, cont_c, pr_caja)
             else:
-                db_insertar_producto(nom, pc, pv, st, sm)
+                # Si es un registro totalmente nuevo, el stock total es simplemente lo ingresado
+                st = cantidad_ingresada
+                db_insertar_producto(cod_b, nom, pc, pv, st, sm, u_medida, cont_c, pr_caja)
 
             limpiar_campos()
             actualizar()
         except ValueError: 
             pass
+
+    def forzar_foco_inventario(control_destino):
+        async def ejecutar_foco_asincrono():
+            await control_destino.focus()
+            page.update()
+        page.run_task(ejecutar_foco_asincrono)
+
+
+
+    def al_escanear_codigo_inventario(e):
+        codigo_ingresado = txt_codigo_barras.value.strip()
+        if not codigo_ingresado:
+            return
+
+        lista_productos_db = txt_buscar_inv.data if txt_buscar_inv.data else []
+        
+        producto_encontrado = None
+        for prod in lista_productos_db:
+            c_barras, nombre, p_compra, p_venta, stock, stock_min, u_medida, cont_caja, p_caja = prod
+            if str(c_barras).lower() == codigo_ingresado.lower():
+                producto_encontrado = prod
+                break
+
+        if producto_encontrado:
+            c_barras, nombre, p_compra, p_venta, stock, stock_min, u_medida, cont_caja, p_caja = producto_encontrado
+            
+            nonlocal producto_codigo_editar
+            producto_codigo_editar = c_barras
+            txt_codigo_barras.disabled = True  
+
+            txt_nombre.value = str(nombre)
+            txt_p_compra.value = str(p_compra)
+            txt_p_venta.value = str(p_venta)
+            txt_stock.value = "" # Queda limpio para recibir la nueva mercancía
+            txt_stock_min.value = str(stock_min)
+            dd_unidad.value = str(u_medida)
+            txt_contenido_caja.value = str(cont_caja)
+            txt_precio_caja.value = str(p_caja)
+            
+            panel_caja.visible = (u_medida == "CAJA")
+            btn_guardar.content = ft.Text("Actualizar")
+            btn_guardar.icon = ft.Icons.SAVE
+            btn_guardar.bgcolor = ft.Colors.BLUE_800
+            btn_cancelar.visible = True
+            
+            # 📍 ACTUALIZAMOS LA INTERFAZ PRIMERO PARA ASENTAR LOS TEXTOS
+            page.update()
+            # 📍 Y AHORA SÍ LE CLAVAMOS EL FOCO DE FORMA ABSOLUTA
+            forzar_foco_inventario(txt_stock)
+        else:
+            txt_nombre.value = ""
+            txt_p_compra.value = ""
+            txt_p_venta.value = ""
+            txt_stock.value = "0"
+            txt_stock_min.value = "5"
+            dd_unidad.value = "UNIDAD"
+            txt_contenido_caja.value = "1"
+            txt_precio_caja.value = "0.00"
+            panel_caja.visible = False
+            
+            producto_codigo_editar = None
+            txt_codigo_barras.disabled = False
+            btn_guardar.content = ft.Text("Añadir")
+            btn_guardar.icon = ft.Icons.ADD
+            btn_guardar.bgcolor = ft.Colors.GREEN
+            
+            # 📍 REPETIMOS EL PROCESO: ACTUALIZACIÓN SEGUIDA DE FOCO
+            page.update()
+            forzar_foco_inventario(txt_nombre)
+            
+        page.update()
+
+    # =========================================================================
+    # DEFINICIÓN DE CONTROLES DE ACCIÓN (Tu Bloque 7)
+    # =========================================================================
+    btn_guardar = ft.ElevatedButton(
+        content=ft.Text("Añadir"), 
+        icon=ft.Icons.ADD, 
+        on_click=guardar_click, 
+        bgcolor=ft.Colors.GREEN, 
+        color=ft.Colors.WHITE, 
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))
+    )
+    btn_cancelar = ft.TextButton("Cancelar", on_click=lambda e: limpiar_campos(), visible=False)
+
+    # Recuerda asignarle a tu "txt_codigo_barras" del Bloque 1 la propiedad: 
+    # on_submit=al_escanear_codigo_inventario
+    txt_codigo_barras.on_submit = al_escanear_codigo_inventario
+
+    actualizar()
+
+
+    forzar_foco_inventario(txt_codigo_barras)
+
+    return ft.Column([
+        ft.Text("📦 Inventario General", size=20, weight=ft.FontWeight.BOLD),
+        ft.ResponsiveRow([
+            ft.Container(txt_codigo_barras, col=4),
+            ft.Container(txt_nombre, col=5),
+            ft.Container(dd_unidad, col=3),
+            
+            ft.Container(txt_p_compra, col=3),
+            ft.Container(txt_p_venta, col=3),
+            ft.Container(txt_stock, col=3),
+            ft.Container(txt_stock_min, col=3),
+        ], run_spacing=5),
+        
+        panel_caja,
+        
+        ft.Row([btn_cancelar, btn_guardar], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
+        
+        txt_buscar_inv,
+        
+        ft.Divider(height=10),
+        lista_productos_movil
+    ], expand=True)
+
+
+
+
+
 
     btn_guardar = ft.ElevatedButton(
         content=ft.Text("Añadir"), 
@@ -912,328 +1372,416 @@ def vista_inventario(page: ft.Page):
 
     actualizar()
 
-    page.floating_action_button = ft.FloatingActionButton(
-        icon=ft.Icons.LOCAL_SHIPPING,
-        bgcolor=ft.Colors.GREEN_700,
-        tooltip="Despachar Vasos a Puestos",
-        on_click=lambda e: abrir_modal_puestos_separado(page, al_cerrar=actualizar)
-    )
-    page.update()
-
     return ft.Column([
-        ft.Text("📦 Inventario General de Vasos", size=20, weight=ft.FontWeight.BOLD),
+        ft.Text("📦 Inventario General", size=20, weight=ft.FontWeight.BOLD),
         ft.ResponsiveRow([
-            ft.Container(txt_nombre, col=12),
+            ft.Container(txt_codigo_barras, col=4),
+            ft.Container(txt_nombre, col=5),
+            ft.Container(dd_unidad, col=3),
+            
             ft.Container(txt_p_compra, col=3),
             ft.Container(txt_p_venta, col=3),
             ft.Container(txt_stock, col=3),
             ft.Container(txt_stock_min, col=3),
         ], run_spacing=5),
-        ft.Row([btn_cancelar, btn_guardar], alignment=ft.MainAxisAlignment.END, spacing=10),
+        
+        # Panel que renderiza dinámicamente el contenido y costo de cajas
+        panel_caja,
+        
+        ft.Row([btn_cancelar, btn_guardar], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
+        
+        txt_buscar_inv,
+        
         ft.Divider(height=10),
         lista_productos_movil
     ], expand=True)
-def abrir_modal_puestos_separado(page: ft.Page, al_cerrar=None):
-    lista_existencias_vendedores = ft.ListView(spacing=5, height=180, scroll=ft.ScrollMode.AUTO)
-    dropdown_vendedor = ft.Dropdown(label="Vendedor", expand=True)
-    dropdown_vaso = ft.Dropdown(label="Vaso / Producto", expand=True)
-    txt_cantidad = ft.TextField(label="Cant.", value="0", width=80, text_align=ft.TextAlign.RIGHT, keyboard_type=ft.KeyboardType.NUMBER)
-
-    def cargar_datos_modal():
-        dropdown_vendedor.options.clear()
-        dropdown_vaso.options.clear()
-        lista_existencias_vendedores.controls.clear()
-
-        try:
-            for u in db_obtener_todos_usuarios():
-                if u[2] == "vendedor":
-                    dropdown_vendedor.options.append(ft.DropdownOption(key=str(u[1]), text=str(u[1]).upper()))
-        except Exception as ex_u:
-            print(ex_u)
-
-        try:
-            for prod in db_obtener_productos():
-                dropdown_vaso.options.append(ft.DropdownOption(key=str(prod[0]), text=f"{prod[1]} (Disp: {prod[4]})"))
-        except Exception as ex_p:
-            print(ex_p)
-
-        try:
-            existencias = db_obtener_stock_actual_vendedores()
-            if not existencias:
-                lista_existencias_vendedores.controls.append(ft.Text("No hay vasos asignados a puestos.", size=12, color=ft.Colors.GREY_500, italic=True))
-            else:
-                for ex in existencias:
-                    vendedor_puesto, nombre_vaso, cantidad_asignada = ex
-                    color_alerta = ft.Colors.ORANGE_700 if cantidad_asignada <= 5 else ft.Colors.BLUE_GREY_700
-                    if cantidad_asignada <= 0:
-                        color_alerta = ft.Colors.RED_700
-                    lista_existencias_vendedores.controls.append(
-                        ft.Row([
-                            ft.Row([
-                                ft.Icon(ft.Icons.HOME, color=ft.Colors.BLUE_700, size=16),
-                                ft.Text(f"{str(vendedor_puesto).upper()} - {nombre_vaso}", size=12)
-                            ], spacing=5),
-                            ft.Text(f"{cantidad_asignada} und.", weight=ft.FontWeight.BOLD, size=12, color=color_alerta)
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-                    )
-        except Exception as ex_t:
-            print(ex_t)
-        page.update()
-
-    def ejecutar_traslado_click(ev):
-        if not dropdown_vendedor.value or not dropdown_vaso.value:
-            return
-        try:
-            cantidad = int(txt_cantidad.value)
-            if cantidad <= 0:
-                return
-        except ValueError:
-            return
-
-        exito = db_asignar_producto_a_vendedor(
-            vendedor_name=dropdown_vendedor.value,
-            producto_id=int(dropdown_vaso.value),
-            cantidad_a_asignar=cantidad
-        )
-
-        if exito:
-            txt_cantidad.value = "0"
-            cargar_datos_modal()
-
-    cargar_datos_modal()
-
-    dialogo_asignacion = ft.AlertDialog(
-        title=ft.Row([
-            ft.Icon(ft.Icons.LOCAL_SHIPPING, color=ft.Colors.GREEN_700),
-            ft.Text("Despachar a Puestos", size=16, weight=ft.FontWeight.BOLD)
-        ], spacing=8),
-        content=ft.Column([
-            ft.Text("Transferir desde Almacén:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_ACCENT_700),
-            ft.Row([dropdown_vendedor, txt_cantidad], spacing=5),
-            dropdown_vaso,
-            ft.ElevatedButton(
-                content=ft.Text("Confirmar Entrega"),
-                icon=ft.Icons.ADD,
-                bgcolor=ft.Colors.GREEN_700,
-                color=ft.Colors.WHITE,
-                width=300,
-                on_click=ejecutar_traslado_click
-            ),
-            ft.Divider(height=15),
-            ft.Text("Vasos activos en la calle:", size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
-            lista_existencias_vendedores
-        ], tight=True, width=320, spacing=8),
-        actions=[
-            ft.TextButton("Cerrar", on_click=lambda _: cerrar_modal())
-        ],
-        actions_alignment=ft.MainAxisAlignment.END,
-    )
-
-    def cerrar_modal():
-        dialogo_asignacion.open = False
-        page.update()
-        if al_cerrar:
-            al_cerrar()
-
-    page.overlay.append(dialogo_asignacion)
-    dialogo_asignacion.open = True
-    page.update()
 
 
 
 
-# --- PANTALLA 3: PUNTO DE VENTA CON DOBLE MONEDA ---
+# --- PANTALLA 3: PUNTO DE VENTA HÍBRIDO (BLOQUE 1: INICIO Y DIÁLOGOS OVERLAY) ---
+import os
+import datetime
+import flet as ft
+
+class ElementoCarrito:
+    def __init__(self, id_p, nombre, precio, cantidad, stock_max, unidad_medida="UNIDAD", es_caja=0, contenido_caja=1):
+        self.id = str(id_p)
+        self.nombre = str(nombre)
+        self.precio = float(precio)
+        self.cantidad = float(cantidad)
+        self.stock_max = float(stock_max)
+        self.unidad_medida = str(unidad_medida)
+        self.es_caja = int(es_caja)
+        self.contenido_caja = int(contenido_caja)
+
 carrito_chicha = []
+productos_en_memoria = []
 
 def vista_ventas(page: ft.Page):
-    # ESTO BORRA EL BOTÓN AUTOMÁTICAMENTE AL ENTRAR A ESTA PESTAÑA
     page.floating_action_button = None
     page.update()
 
+    # --- DIÁLOGOS GLOBALES SEGUROS INSTALADOS EN EL OVERLAY (FLET 0.85.5) ---
+    txt_referencia = ft.TextField(label="Número de Referencia", autofocus=True, dense=True, keyboard_type=ft.KeyboardType.NUMBER)
+    cerrar_dialogo_referencia = lambda e=None: setattr(dialogo_referencia, "open", False) or page.update()
 
-    cuadricula_productos = ft.GridView(
-        expand=False,
-        height=180,              
-        runs_count=3,            
-        max_extent=160,          
-        spacing=8,
-        run_spacing=8,
+    dialogo_referencia = ft.AlertDialog(
+        modal=True,
+        title=ft.Row([ft.Icon(ft.Icons.PHONELINK_RING_ROUNDED, color=ft.Colors.BLUE_ACCENT_700), ft.Text("Confirmar Pago Móvil", size=16, weight=ft.FontWeight.BOLD)], spacing=10),
+        content=ft.Column([ft.Text("Por favor, ingrese el número de referencia de la transacción:"), txt_referencia], tight=True, width=300),
+        actions=[ft.TextButton("Cancelar", on_click=cerrar_dialogo_referencia)],
+        actions_alignment=ft.MainAxisAlignment.END
     )
-    
-    lista_carrito = ft.ListView(expand=True, spacing=4) 
-    lbl_total = ft.Text("Total: $0.00 (0.00 Bs.)", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700)
+    page.overlay.append(dialogo_referencia)
+
+    txt_peso_entrada = ft.TextField(label="Cantidad a vender", autofocus=True, dense=True, keyboard_type=ft.KeyboardType.NUMBER)
+    cerrar_dialogo_peso = lambda e=None: setattr(dialogo_peso, "open", False) or page.update()
+        
+    dialogo_peso = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Ingresar Cantidad"),
+        content=txt_peso_entrada,
+        actions=[ft.TextButton("Cancelar", on_click=cerrar_dialogo_peso)],
+        actions_alignment=ft.MainAxisAlignment.END
+    )
+    page.overlay.append(dialogo_peso)
+
+    # --- CONTROLES DE LA INTERFAZ ORIGINAL ---
+    cuadricula_productos = ft.GridView(expand=False, height=180, runs_count=3, max_extent=160, spacing=8, run_spacing=8, scroll=ft.ScrollMode.ALWAYS)
+    lista_productos_ui = ft.ListView(expand=True, height=150, spacing=5, scroll=ft.ScrollMode.ALWAYS)
+    lista_carrito = ft.ListView(height=220, spacing=0, scroll=ft.ScrollMode.ALWAYS)
+    lbl_total = ft.Text("Total: $0.00 (0.00 Bs.)", size=19, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_700)
     
     dd_metodo = ft.Dropdown(
         label="Pago", 
         options=[ft.dropdown.Option("EFECTIVO"), ft.dropdown.Option("PUNTO"), ft.dropdown.Option("PAGO MOVIL")], 
-        value="EFECTIVO", 
-        dense=True,
-        width=150 
+        value="EFECTIVO", dense=True, width=150 
     )
+    
+
+# --- BLOQUE 2: LÓGICA INTERNA Y RENDERIZADO DEL CARRITO ---
 
     def render_carrito():
         lista_carrito.controls.clear()
         total_acumulado = 0.0
-        tasa = float(db_obtener_tasa_dolar())
+        try:
+            tasa = float(db_obtener_tasa_dolar())
+        except NameError:
+            tasa = 1.0
         
         for idx, art in enumerate(carrito_chicha):
-            precio_individual = float(art[2])
-            cantidad_unidades = int(art[3])
-            subtotal_renglon = precio_individual * cantidad_unidades
+            subtotal_renglon = art.precio * art.cantidad
             total_acumulado += subtotal_renglon
-            
             id_actual = idx
+            
+            sufijo = " Kg" if art.unidad_medida == "KG" else (" Cajas" if art.es_caja == 1 else " Unid")
+            cant_str = f"{art.cantidad:.3f}" if art.unidad_medida == "KG" else f"{int(art.cantidad)}"
 
             lista_carrito.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Text(f"{cantidad_unidades}x", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_800),
-                        ft.Text(str(art[1]), expand=True, size=16), 
-                        ft.Text(f"${subtotal_renglon:.2f}", size=16, weight=ft.FontWeight.BOLD),
-                        ft.IconButton(
-                            icon=ft.Icons.REMOVE_CIRCLE_OUTLINE, 
-                            icon_color=ft.Colors.RED_400, 
-                            icon_size=18, 
-                            on_click=lambda e, i=id_actual: quitar(i)
-                        )
-                    ]),
-                    padding=6, bgcolor=ft.Colors.GREY_50, border_radius=6
+                        ft.Text(f"{cant_str}{sufijo}", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_800, size=19),
+                        ft.Text(art.nombre, expand=True, size=19), 
+                        ft.Text(f"${subtotal_renglon:.2f}", size=19, weight=ft.FontWeight.BOLD),
+                        ft.Row([
+                            ft.IconButton(icon=ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_color=ft.Colors.AMBER_700, icon_size=19, padding=0, on_click=lambda _, i=id_actual: restar_unidad(i)),
+                            ft.IconButton(icon=ft.Icons.ADD_CIRCLE_OUTLINE, icon_color=ft.Colors.GREEN_600, icon_size=19, padding=0, on_click=lambda _, objeto_art=art: agregar_al_carrito_objeto(objeto_art)),
+                            ft.IconButton(icon=ft.Icons.DELETE_OUTLINE_ROUNDED, icon_color=ft.Colors.RED_500, icon_size=19, padding=0, on_click=lambda _, i=id_actual: quitar(i))
+                        ], spacing=4)
+                    ], spacing=5, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=4, margin=0, height=32
                 )
             )
-        total_bs = total_acumulado * tasa
-        lbl_total.value = f"Total: ${total_acumulado:.2f} ({total_bs:.1f} Bs.)"
+        lbl_total.value = f"Total: ${total_acumulado:.2f} ({total_acumulado * tasa:.2f} Bs.)"
         page.update()
+
+    # === REEMPLAZA ÚNICAMENTE ESTA FUNCIÓN EN TU CÓDIGO ACTUAL ===
+    def forzar_foco_absoluto():
+        async def ejecutar_foco_asincrono():
+            await txt_buscar.focus() # <-- ¡AQUÍ ESTÁ EL AWAIT QUE EXIGÍA LA CONSOLA!
+            page.update()
+        page.run_task(ejecutar_foco_asincrono)
 
     def quitar(index):
         carrito_chicha.pop(index)
         render_carrito()
+        forzar_foco_absoluto()
+
+    def restar_unidad(index):
+        art = carrito_chicha[index]
+        if art.unidad_medida == "KG":
+            if art.cantidad > 0.101: 
+                art.cantidad -= 0.1
+                art.whitespace_qty = art.cantidad
+            else: 
+                carrito_chicha.pop(index)
+        else:
+            if art.cantidad > 1: 
+                art.cantidad -= 1
+            else: 
+                carrito_chicha.pop(index)
+        render_carrito()
+        forzar_foco_absoluto()
+
+    def agregar_al_carrito_objeto(objeto_art):
+        incremento = 0.1 if objeto_art.unidad_medida == "KG" else 1
+        if (objeto_art.cantidad + incremento) <= objeto_art.stock_max:
+            objeto_art.cantidad += incremento
+            objeto_art.whitespace_qty = objeto_art.cantidad
+            render_carrito()
+        else:
+            page.snack_bar = ft.SnackBar(ft.Text("No hay suficiente stock"), bgcolor="orange")
+            page.snack_bar.open = True
+        forzar_foco_absoluto()
+
+    # --- BLOQUE 3: AGREGAR PRODUCTOS AL CARRITO Y DIÁLOGOS DINÁMICOS ---
 
     def agregar_al_carrito(prod):
-        for art in carrito_chicha:
-            if int(art[0]) == int(prod[0]):
-                if int(art[3]) < int(prod[3]): 
-                    art[3] += 1
+        p_id, p_nombre, p_venta, p_stock, u_medida, cont_caja, p_caja = prod
+        p_stock = float(p_stock)
+
+        if u_medida == "KG":
+            txt_peso_entrada.value = ""
+            txt_peso_entrada.error_text = None
+            
+            def guardar_peso(ev):
+                try: 
+                    peso_vender = float(txt_peso_entrada.value.strip())
+                except ValueError: 
+                    return
+                if peso_vender <= 0 or peso_vender > p_stock: 
+                    return
+                
+                cerrar_dialogo_peso()
+                # Si el producto por KG ya está en el carrito, se actualiza y se mueve al inicio (arriba)
+                for idx, art in enumerate(carrito_chicha):
+                    if art.id == str(p_id):
+                        art.cantidad += peso_vender
+                        art.whitespace_qty = art.cantidad
+                        producto_existente = carrito_chicha.pop(idx)
+                        carrito_chicha.insert(0, producto_existente)
+                        render_carrito()
+                        forzar_foco_absoluto()
+                        return
+                
+                # Si es un producto por KG nuevo en la venta, se inserta en la posición 0
+                carrito_chicha.insert(0, ElementoCarrito(p_id, p_nombre, p_venta, peso_vender, p_stock, "KG"))
+                render_carrito()
+                forzar_foco_absoluto()
+
+            dialogo_peso.title = ft.Text(f"Peso para {p_nombre}")
+            dialogo_peso.content = ft.Column([ft.Text(f"Disponible: {p_stock:.3f} Kg"), txt_peso_entrada], tight=True, width=300)
+            dialogo_peso.actions = [
+                ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo_peso() or forzar_foco_absoluto()), 
+                ft.ElevatedButton("Agregar", on_click=guardar_peso)
+            ]
+            dialogo_peso.open = True
+            page.update()
+
+        elif u_medida == "CAJA":
+            def comprar_como_caja(ev):
+                cerrar_dialogo_peso()
+                # Se inserta en la posición 0 (arriba)
+                carrito_chicha.insert(0, ElementoCarrito(p_id, f"{p_nombre} (CAJA)", p_caja, 1, p_stock, "UNIDAD", 1, cont_caja))
+                render_carrito()
+                forzar_foco_absoluto()
+
+            def comprar_como_detalle(ev):
+                cerrar_dialogo_peso()
+                # Se inserta en la posición 0 (arriba)
+                carrito_chicha.insert(0, ElementoCarrito(p_id, p_nombre, p_venta, 1, p_stock, "UNIDAD", 0, 1))
+                render_carrito()
+                forzar_foco_absoluto()
+
+            dialogo_peso.title = ft.Text("Seleccione Presentación")
+            dialogo_peso.content = ft.Text(f"¿Cómo desea vender {p_nombre}?")
+            dialogo_peso.actions = [
+                ft.ElevatedButton("Detalle", on_click=comprar_como_detalle), 
+                ft.ElevatedButton("Caja", on_click=comprar_como_caja)
+            ]
+            dialogo_peso.open = True
+            page.update()
+            
+        else:
+            # Si el producto estándar ya existe, incrementa en 1 y salta al tope del carrito (arriba)
+            for idx, art in enumerate(carrito_chicha):
+                if art.id == str(p_id):
+                    art.cantidad += 1
+                    art.whitespace_qty = art.cantidad
+                    producto_existente = carrito_chicha.pop(idx)
+                    carrito_chicha.insert(0, producto_existente)
                     render_carrito()
-                else:
-                    page.open(ft.SnackBar(ft.Text(f"No hay más stock disponible de {prod[1]}"), bgcolor="orange"))
+                    forzar_foco_absoluto()
+                    return
+            
+            # Si el producto estándar es nuevo en la venta, se inserta en la posición 0
+            carrito_chicha.insert(0, ElementoCarrito(p_id, p_nombre, p_venta, 1, p_stock, "UNIDAD", 0, 1))
+            render_carrito()
+            forzar_foco_absoluto()
+
+
+    # --- BLOQUE 4: FILTRADO, BÚSQUEDA Y RENDERIZADO DEL CATÁLOGO ---
+
+    def filtrar_y_renderizar_catalogo():
+        texto_busqueda = txt_buscar.value.lower().strip() if txt_buscar.value else ""
+        cuadricula_productos.controls.clear()
+        lista_productos_ui.controls.clear()
+
+        # LEEMOS EL MODO DE VISTA EN TIEMPO REAL DESDE EL ARCHIVO
+        ruta_txt_config = "config_vista.txt"
+        modo_visual = "cuadricula"
+        if os.path.exists(ruta_txt_config):
+            try:
+                with open(ruta_txt_config, "r") as f:
+                    modo_visual = f.read().strip().lower()
+            except Exception:
+                modo_visual = "cuadricula"
+
+        # OCULTAMOS O MOSTRAMOS LOS CONTENEDORES SEGÚN EL MODO
+        if modo_visual == "lista":
+            cuadricula_productos.visible = False
+            lista_productos_ui.visible = True
+        else:
+            cuadricula_productos.visible = True
+            lista_productos_ui.visible = False
+
+        for fila_p in productos_en_memoria:
+            cod_barras, nombre, p_compra, p_venta, stock, stock_min, u_medida, cont_caja, p_caja = fila_p
+            if texto_busqueda and texto_busqueda not in nombre.lower(): 
+                continue
+
+            prod_data = (cod_barras, nombre, p_venta, stock, u_medida, cont_caja, p_caja)
+            stock_visual = f"{stock:.3f} Kg" if u_medida == "KG" else f"{int(stock)} un"
+
+            # SI ESTÁ EN MODO CUADRÍCULA, ALIMENTAMOS LA GRID
+            if modo_visual == "cuadricula":
+                cuadricula_productos.controls.append(
+                    ft.Card(content=ft.Container(
+                        on_click=lambda e, pd=prod_data: agregar_al_carrito(pd),
+                        padding=6, content=ft.Column([
+                            ft.Icon(ft.Icons.SCALE if u_medida == "KG" else ft.Icons.LOCAL_DRINK, color=ft.Colors.BLUE_500, size=24),
+                            ft.Text(nombre, weight=ft.FontWeight.BOLD, size=12),
+                            ft.Text(f"${float(p_venta):.2f}", size=11, color=ft.Colors.GREEN_700),
+                            ft.Text(f"Stock: {stock_visual}", size=10)
+                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=1)
+                    ))
+                )
+            
+            # SI ESTÁ EN MODO LISTA, ALIMENTAMOS EL LISTVIEW
+            else:
+                lista_productos_ui.controls.append(
+                    ft.Card(
+                        content=ft.ListTile(
+                            leading=ft.Icon(ft.Icons.SCALE if u_medida == "KG" else ft.Icons.LOCAL_DRINK, color=ft.Colors.BLUE_500),
+                            title=ft.Text(nombre, weight=ft.FontWeight.BOLD, size=16),
+                            subtitle=ft.Text(f"Disponible: {stock_visual}", size=16),
+                            trailing=ft.Text(f"${float(p_venta):.2f}", color=ft.Colors.GREEN_700, weight=ft.FontWeight.BOLD, size=16),
+                            on_click=lambda e, pd=prod_data: agregar_al_carrito(pd)
+                        ),
+                        elevation=1
+                    )
+                )
+        page.update()
+
+    def al_buscar_o_escanear_producto(e):
+        texto = txt_buscar.value.strip()
+        if not texto:
+            filtrar_y_renderizar_catalogo()
+            return
+        for fila_p in productos_en_memoria:
+            cod_barras, nombre, p_compra, p_venta, stock, stock_min, u_medida, cont_caja, p_caja = fila_p
+            if str(cod_barras) == texto:
+                agregar_al_carrito((cod_barras, nombre, p_venta, stock, u_medida, cont_caja, p_caja))
+                txt_buscar.value = ""
+                txt_buscar.update()
                 return
-        
-        carrito_chicha.append([int(prod[0]), str(prod[1]), float(prod[2]), 1])
-        render_carrito()
+        filtrar_y_renderizar_catalogo()
+
+    # === ASÍ DEBERÍA QUEDAR LA DEFINICIÓN EN TU CÓDIGO ORIGINAL ===
+    txt_buscar = ft.TextField(
+        label="Escanear o buscar...", 
+        prefix_icon=ft.Icons.BARCODE_READER, 
+        dense=True, 
+        autofocus=True, # <-- AGREGA ESTA LÍNEA AQUÍ
+        on_change=lambda e: filtrar_y_renderizar_catalogo(), 
+        on_submit=al_buscar_o_escanear_producto
+    )
+
+    # --- BLOQUE 5: COBRO DE VENTA, CARGA INICIAL Y RETORNO DE LA VISTA ---
 
     def cargar_productos_fijos():
-        cuadricula_productos.controls.clear()
-        tasa = float(db_obtener_tasa_dolar())
-        
-        productos = db_obtener_productos()
-        for p in productos:
-            id_p, nombre, p_compra, p_venta, stock, stock_min = p
-            precio_bs = float(p_venta) * tasa
-            
-            prod_data = (id_p, nombre, p_venta, stock)
-            
-            cuadricula_productos.controls.append(
-                ft.Card(
-                    content=ft.Container(
-                        on_click=lambda e, pd=prod_data: agregar_al_carrito(pd),
-                        border_radius=8,
-                        padding=6,
-                        content=ft.Column([
-                            ft.Icon(ft.Icons.LOCAL_DRINK, color=ft.Colors.BLUE_500, size=24),
-                            ft.Text(nombre, weight=ft.FontWeight.BOLD, size=12, text_align=ft.TextAlign.CENTER, max_lines=1),
-                            ft.Text(f"${float(p_venta):.2f}", size=11, color=ft.Colors.GREEN_700, weight=ft.FontWeight.W_600),
-                            ft.Text(f"{precio_bs:.1f} Bs.", size=9, color=ft.Colors.GREY_600),
-                        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2)
-                    ),
-                    elevation=2
-                )
-            )
-        page.update()
+        global productos_en_memoria
+        try: 
+            productos_en_memoria = db_obtener_productos()
+        except Exception: 
+            productos_en_memoria = []
+        filtrar_y_renderizar_catalogo()
 
     def ejecutar_registro(referencia):
         if not carrito_chicha: return
-        total_venta = sum(float(art[2]) * int(art[3]) for art in carrito_chicha)
-        
-        vendedor_actual = "ADMIN"
-        try:
-            for control in page.controls:
-                if hasattr(control, "controls"):
-                    for sub_control in control.controls:
-                        if hasattr(sub_control, "content") and hasattr(sub_control.content, "controls"):
-                            for el in sub_control.content.controls:
-                                if isinstance(el, ft.Row) and len(el.controls) > 0:
-                                    texto_header = str(el.controls[0].value)
-                                    if "Vendedor:" in texto_header:
-                                        vendedor_actual = texto_header.replace("👤 Vendedor:", "").strip()
-                                        break
-        except Exception:
-            vendedor_actual = "ADMIN"
+        total_venta = sum(art.precio * art.cantidad for art in carrito_chicha)
+        carrito_lista_compatible = []
+        for art in carrito_chicha:
+            unidades_descontar = float(art.cantidad * art.contenido_caja) if art.es_caja == 1 else float(art.cantidad)
+            carrito_lista_compatible.append([art.id, art.nombre, art.precio, art.cantidad, art.es_caja, unidades_descontar])
 
-        if db_registrar_venta_completa(carrito_chicha, total_venta, dd_metodo.value, vendedor_actual, referencia):
-            carrito_chicha.clear()
-            render_carrito()
-            lbl_total.value = "¡Venta Registrada!"
-            cargar_productos_fijos() 
+        try:
+            if db_registrar_venta_completa(carrito_lista_compatible, total_venta, dd_metodo.value, "ADMIN", referencia):
+                carrito_chicha.clear()
+                render_carrito()
+                lbl_total.value = "Total: $0.00 (0.00 Bs.)"
+                txt_buscar.value = ""
+                cargar_productos_fijos()
+                page.update()
+        except NameError:
+            page.snack_bar = ft.SnackBar(ft.Text("Error: db_registrar_venta_completa no está definida."), bgcolor="red")
+            page.snack_bar.open = True
             page.update()
 
-    def procesar_venta(e): 
+    def procesar_venta(e):
         if not carrito_chicha: return
-        
         if dd_metodo.value == "PAGO MOVIL":
-            txt_referencia = ft.TextField(label="Número de Referencia", keyboard_type=ft.KeyboardType.NUMBER, autofocus=True)
-            
-            def guardar_con_referencia(e_dialog):
+            txt_referencia.value = ""
+            def guardar_con_referencia(ed):
                 ref = txt_referencia.value.strip()
-                if not ref:
-                    page.open(ft.SnackBar(ft.Text("⚠️ Debes ingresar un número de referencia"), bgcolor="orange"))
-                    return
-                
-                page.overlay.remove(dialogo_pm)
+                dialogo_referencia.open = False
                 page.update()
                 ejecutar_registro(ref)
-
-            dialogo_pm = ft.AlertDialog(
-                title=ft.Text("📱 Confirmar Pago Móvil"),
-                content=ft.Column([
-                    ft.Text("Ingrese el número de comprobante bancario para continuar:"),
-                    txt_referencia
-                ], tight=True, spacing=10),
-                actions=[
-                    ft.TextButton("Cancelar", on_click=lambda _: [page.overlay.remove(dialogo_pm), page.update()]),
-                    ft.ElevatedButton("Guardar Venta", bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE, on_click=guardar_con_referencia)
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            )
-            page.overlay.append(dialogo_pm)
-            dialogo_pm.open = True
+            dialogo_referencia.actions = [
+                ft.TextButton("Cancelar", on_click=cerrar_dialogo_referencia), 
+                ft.ElevatedButton("Confirmar", on_click=guardar_con_referencia)
+            ]
+            dialogo_referencia.open = True
             page.update()
-        else:
-            ejecutar_registro(None)
+        else: 
+            ejecutar_registro("")
 
-    btn_pagar = ft.ElevatedButton(
-        "Cobrar Venta", 
+    btn_cobrar = ft.ElevatedButton(
+        "✓ Cobrar Venta", 
         icon=ft.Icons.CHECK, 
         bgcolor=ft.Colors.GREEN_700, 
         color=ft.Colors.WHITE, 
-        on_click=procesar_venta, 
-        expand=True
+        height=42, 
+        expand=True, 
+        on_click=procesar_venta
     )
 
-    cargar_productos_fijos()
-    render_carrito()
-
-    return ft.Column([
-        ft.Text("🥤 LA RICA CHICHA DE CARACAS", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_800),
-        cuadricula_productos,
-        ft.Text("🛒 Carrito Actual:", size=15, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_GREY_700),
-        lista_carrito,
-        ft.Divider(height=5),
-        ft.Row([
-            dd_metodo,
-            lbl_total
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        ft.Row([btn_pagar])
-    ], expand=True)
+    try:
+        cargar_productos_fijos()
+        
+         
+        
+        return ft.Column([
+            ft.Row([ft.Icon(ft.Icons.LOCAL_DRINK, color=ft.Colors.RED_ACCENT_700, size=24), ft.Text("CELER", size=16, weight=ft.FontWeight.BOLD)]),
+            txt_buscar, 
+            cuadricula_productos,  
+            lista_productos_ui,    
+            lista_carrito,
+            ft.Column([ft.Row([dd_metodo, lbl_total], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Row([btn_cobrar])])
+        ], expand=True, spacing=10)
+    except Exception as err:
+        return ft.Column([ft.Text(f"Error: {err}", color="red")])
 
 
 
@@ -1356,13 +1904,27 @@ def vista_caja(page: ft.Page):
     ], expand=True, scroll=ft.ScrollMode.AUTO)
 
 
-# --- PANTALLA 5: HISTORIAL DE VENTAS COMPACTO CON CHECKBOX UNIVERSAL ---
+# --- PANTALLA 5: HISTORIAL DE VENTAS COMPACTO CON CHECKBOX UNIVERSAL (PARTE 1 REPARADA) ---
+import datetime
+import flet as ft
 
 def vista_historial_ventas(page: ft.Page):
-    lista_historial = ft.ListView(spacing=5, height=500, auto_scroll=False)
+    lista_historial = ft.ListView(spacing=5, height=500, scroll=ft.ScrollMode.ALWAYS, auto_scroll=False)
+
+    # SOLUCIÓN AL BANNER ROJO: Inicializamos el diálogo con datos base para que Flet lo acepte al cargar
+    dialogo_comun = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Cargando..."),
+        content=ft.Text("Espere un momento..."),
+        actions=[ft.TextButton("Ok")]
+    )
+    page.overlay.append(dialogo_comun)
+
+    def cerrar_cualquier_dialogo(e=None):
+        dialogo_comun.open = False
+        page.update()
 
     def generar_tarjeta_venta(id_venta, fecha_venta, total_venta, metodo_pago, tasa_dolar, vendedor_ticket, referencia_pm, conciliado_inicial):
-        # 1. Aseguramos la multiplicación de la tasa sin romper nada
         try:
             total_bs = float(total_venta) * float(tasa_dolar)
         except Exception:
@@ -1377,7 +1939,6 @@ def vista_historial_ventas(page: ft.Page):
 
         columna_productos = ft.Column(spacing=3, tight=True)
         
-        # Tratamos de cargar los productos, si falla ponemos un aviso simple
         try:
             articulos = db_obtener_detalles_productos_venta(id_venta)
         except Exception:
@@ -1394,8 +1955,8 @@ def vista_historial_ventas(page: ft.Page):
                     sub = cantidad * precio_u
                     columna_productos.controls.append(
                         ft.Row([
-                            ft.Text(f"• {cantidad}x {nombre_p}", size=12, color=ft.Colors.BLUE_GREY_700, expand=True),
-                            ft.Text(f"${sub:.2f}", size=12, weight=ft.FontWeight.W_500, color=ft.Colors.BLUE_GREY_900)
+                            ft.Text(f"• {cantidad}x {nombre_p}", size=16, color=ft.Colors.BLUE_GREY_700, expand=True),
+                            ft.Text(f"${sub:.2f}", size=16, weight=ft.FontWeight.W_500, color=ft.Colors.BLUE_GREY_900)
                         ])
                     )
                 except Exception:
@@ -1419,42 +1980,60 @@ def vista_historial_ventas(page: ft.Page):
                 pass
             page.update()
 
-        # 2. USAREMOS UN CHECKBOX NATIVO QUE ES 100% SEGURO Y NO SE ROMPE
+        # --- BOTÓN BORRAR VENTA CORREGIDO ---
+        def presionar_eliminar_venta(e):
+            def confirmar_eliminacion(ev):
+                exito = db_eliminar_venta_y_reponer_inventario(id_venta)
+                cerrar_cualquier_dialogo()
+                if exito:
+                    page.snack_bar = ft.SnackBar(ft.Text(f"Venta {folio_str} eliminada. Inventario devuelto."))
+                    page.snack_bar.open = True
+                    cargar_historial()
+                else:
+                    page.snack_bar = ft.SnackBar(ft.Text("Error al eliminar la venta de la base de datos."), bgcolor=ft.Colors.RED_700)
+                    page.snack_bar.open = True
+                    page.update()
+
+            dialogo_comun.title = ft.Text("🚨 ¿Eliminar esta venta?")
+            dialogo_comun.content = ft.Text(
+                f"Esta acción borrará permanentemente el Folio {folio_str}.\n"
+                "Los productos volverán al stock automáticamente."
+            )
+            dialogo_comun.actions = [
+                ft.TextButton("Cancelar", on_click=cerrar_cualquier_dialogo),
+                ft.ElevatedButton("Sí, eliminar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_eliminacion)
+            ]
+            dialogo_comun.actions_alignment = ft.MainAxisAlignment.END
+            dialogo_comun.open = True
+            page.update()
+
         chk_banco = ft.Checkbox(
             value=True if conciliado_inicial == 1 else False,
             fill_color=ft.Colors.GREEN_600,
         )
 
+        # --- CHECKBOX CORREGIDO ---
         def cambiar_estado_checkbox(e):
-            # Si el usuario quiere DESTILDAR (quitar el Check)
             if chk_banco.value == False:
                 def confirmar_destildar(ev):
                     db_actualizar_conciliacion(id_venta, 0)
                     chk_banco.value = False
-                    dialogo_alerta.open = False
-                    page.overlay.remove(dialogo_alerta)
-                    page.update()
+                    cerrar_cualquier_dialogo()
 
                 def cancelar_destildar(ev):
-                    chk_banco.value = True  # Le devolvemos el check si cancela
-                    dialogo_alerta.open = False
-                    page.overlay.remove(dialogo_alerta)
-                    page.update()
+                    chk_banco.value = True
+                    cerrar_cualquier_dialogo()
 
-                dialogo_alerta = ft.AlertDialog(
-                    title=ft.Text("⚠️ Advertencia de Control"),
-                    content=ft.Text(f"¿Deseas quitar la verificación del Folio {folio_str}? Volverá a marcarse como pendiente en el banco."),
-                    actions=[
-                        ft.TextButton("Cancelar", on_click=cancelar_destildar),
-                        ft.ElevatedButton("Sí, quitar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_destildar)
-                    ],
-                    actions_alignment=ft.MainAxisAlignment.END
-                )
-                page.overlay.append(dialogo_alerta)
-                dialogo_alerta.open = True
+                dialogo_comun.title = ft.Text("⚠️ Advertencia de Control")
+                dialogo_comun.content = ft.Text(f"¿Deseas quitar la verificación del Folio {folio_str}? Volverá a marcarse como pendiente.")
+                dialogo_comun.actions = [
+                    ft.TextButton("Cancelar", on_click=cancelar_destildar),
+                    ft.ElevatedButton("Sí, quitar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_destildar)
+                ]
+                dialogo_comun.actions_alignment = ft.MainAxisAlignment.END
+                dialogo_comun.open = True
                 page.update()
             else:
-                # Si lo quiere TILDAR, se guarda directo en la base de datos
                 db_actualizar_conciliacion(id_venta, 1)
                 chk_banco.value = True
                 page.update()
@@ -1470,33 +2049,45 @@ def vista_historial_ventas(page: ft.Page):
             content=ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        chk_banco,  # Tu control de banco seguro aquí
+                        chk_banco,
                         ft.Icon(ft.Icons.RECEIPT, color=ft.Colors.BLUE_GREY, size=22),
                         ft.Column([
-                            ft.Text(f"Folio {folio_str} - {texto_metodo}", weight=ft.FontWeight.BOLD, size=13),
-                            ft.Text(f"Atendido por: {vendedor_ticket}", size=11, color=ft.Colors.BLUE_GREY_500, weight=ft.FontWeight.W_500),
-                            ft.Text(str(fecha_venta), size=10, color=ft.Colors.GREY_600)
+                            ft.Text(f"Folio {folio_str} - {texto_metodo}", weight=ft.FontWeight.BOLD, size=16),
+                            #ft.Text(f"Atendido por: {vendedor_ticket}", size=11, color=ft.Colors.BLUE_GREY_500, weight=ft.FontWeight.W_500),
+                            ft.Text(str(fecha_venta), size=16, color=ft.Colors.GREY_600)
                         ], spacing=1, expand=True),
                         ft.Column([
-                            ft.Text(f"${total_float:.2f}", weight=ft.FontWeight.BOLD, size=13, color=ft.Colors.GREEN_700),
-                            ft.Text(f"{total_bs:.1f} Bs.", size=11, color=ft.Colors.BLUE_900)
+                            ft.Text(f"${total_float:.2f}", weight=ft.FontWeight.BOLD, size=16, color=ft.Colors.GREEN_700),
+                            ft.Text(f"{total_bs:.1f} Bs.", size=15, color=ft.Colors.BLUE_900)
                         ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=1),
-                        ft.IconButton(
-                            icon=ft.Icons.INFO, 
-                            icon_size=20, 
-                            icon_color=ft.Colors.BLUE,
-                            on_click=conmutar_detalle
-                        )
+                        
+                        ft.Row([
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE, 
+                                icon_size=20, 
+                                icon_color=ft.Colors.RED_400,
+                                tooltip="Eliminar venta erronea",
+                                on_click=presionar_eliminar_venta
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.INFO, 
+                                icon_size=20, 
+                                icon_color=ft.Colors.BLUE,
+                                on_click=conmutar_detalle
+                            )
+                        ], spacing=0)
                     ]),
                     contenedor_detalle
                 ]),
                 padding=10
             )
-        )
+        ) 
+
+#  HISTORIAL DE VENTAS COMPACTO CON CHECKBOX UNIVERSAL (PARTE 2 REPARADA) ---
+# Pega esto exactamente debajo del Bloque 1, alineado al mismo nivel de la función vista_historial_ventas
 
     def cargar_historial():
         lista_historial.controls.clear()
-        
         try:
             tasa = float(db_obtener_tasa_dolar())
         except Exception:
@@ -1514,6 +2105,7 @@ def vista_historial_ventas(page: ft.Page):
 
         for v in ventas:
             try:
+                # COMPROBADO Y REPARADO: Indexamos de forma correcta la tupla devuelta por SQLite
                 id_v = v[0]
                 fecha = v[1]
                 
@@ -1532,47 +2124,44 @@ def vista_historial_ventas(page: ft.Page):
                     conciliado = 0
                 
                 tarjeta = generar_tarjeta_venta(id_v, fecha, total, metodo, tasa, vendedor, referencia, conciliado)
+                
+                # 📍 ¡ESTA LÍNEA ES LA MAGIA! Guardamos la fecha pura en la raíz de la tarjeta
+
+                tarjeta.data = str(fecha)
+
                 lista_historial.controls.append(tarjeta)
             except Exception as e_fila:
                 print(f"Fila ignorada por error menor: {e_fila}")
                 continue
-            
-        page.update()    
-    # =========================================================================
-    #  BLOQUE DE FILTRADO CORREGIDO Y COMPACTO (REEMPLAZAR AL FINAL)
-    # =========================================================================
-    
-    # Creamos un contenedor de texto dedicado con formato limpio
+        page.update()
+
     texto_boton_fecha = ft.Text("Seleccionar Día", size=13, weight=ft.FontWeight.W_500)
 
-    # Botón principal utilizando page.show_dialog() nativo de Flet 0.86
     btn_fecha_texto = ft.ElevatedButton(
         content=texto_boton_fecha,
         icon="calendar_month",
-        on_click=lambda _: page.show_dialog(picker_historial)
+        on_click=lambda _: page.show_dialog(picker_historial) if hasattr(page, "show_dialog") else page.open(picker_historial)
     )
 
     def al_cambiar_fecha(e):
         if picker_historial.value:
+            # Convierte la fecha seleccionada en el calendario a formato AAAA-MM-DD
             fecha_elegida = picker_historial.value.date().strftime("%Y-%m-%d")
-            # Actualizamos el texto en pantalla de forma segura
             texto_boton_fecha.value = f"Día: {picker_historial.value.date().strftime('%d/%m/%Y')}"
             texto_boton_fecha.update()
             btn_reset.visible = True
             btn_reset.update()
             
-            # Filtramos visualmente recorriendo tus tarjetas de la lista sin tocar la base de datos
-            for tarjeta in lista_historial.controls[:]:
-                try:
-                    # Accedemos de forma segura a la tercera fila de textos donde pusiste str(fecha_venta)
-                    # Tarjeta -> Container -> Column -> Row -> Column (índice 2) -> Text (índice 2, la fecha)
-                    componentes_fila = tarjeta.content.content.controls[0].controls[2].controls
-                    texto_fecha_tarjeta = componentes_fila[2].value
+            for tarjeta in lista_historial.controls:
+                # Leemos el dato puro de la fecha que inyectamos en el Paso 1
+                fecha_tarjeta = tarjeta.data
+                
+                if fecha_tarjeta:
+                    # Compara si el día elegido está contenido en la fecha/hora de la tarjeta
+                    tarjeta.visible = (fecha_elegida in str(fecha_tarjeta))
+                else:
+                    tarjeta.visible = False
                     
-                    # Si el string de la fecha elegida está en el texto del registro, se queda visible
-                    tarjeta.visible = (fecha_elegida in str(texto_fecha_tarjeta))
-                except Exception:
-                    continue
             lista_historial.update()
 
     def restablecer_todo(e):
@@ -1580,13 +2169,10 @@ def vista_historial_ventas(page: ft.Page):
         texto_boton_fecha.update()
         btn_reset.visible = False
         btn_reset.update()
-        # Restauramos la visibilidad de todo tu historial cargado
         for tarjeta in lista_historial.controls:
             tarjeta.visible = True
         lista_historial.update()
 
-    # SOLUCIÓN AL BANNER ROJO: Le agregamos un icono base por defecto para que Flet no proteste al iniciar
-        # SOLUCIÓN AL BANNER ROJO: Le agregamos un icono base por defecto para que Flet no proteste al iniciar
     btn_reset = ft.IconButton(
         icon="close",
         icon_color="red",
@@ -1595,45 +2181,32 @@ def vista_historial_ventas(page: ft.Page):
         on_click=restablecer_todo
     )
 
-    # =========================================================================
-    # NUEVA LÓGICA: VENTANA FLOTANTE DE REPORTES (SUMA EN $)
-    # =========================================================================
     def mostrar_reporte_vendedores_click(e):
         reporte_sumas = {}
-        
-        # Recorremos de forma segura las tarjetas que se encuentran visibles en pantalla
         for tarjeta in lista_historial.controls:
             try:
-                # Si aplicaste el filtro por día, ignoramos las tarjetas ocultas
                 if not tarjeta.visible:
                     continue
                 
-                # Mapeo seguro de la estructura interna de tu tarjeta:
-                # Tarjeta -> Container -> Column -> Row
                 fila_principal = tarjeta.content.content.controls[0]
                 
-                # Fila -> Column (índice 2) -> Text (índice 1, es el de 'Atendido por: VENDEDOR')
+                # Extrae los nombres de vendedores de manera limpia y segura
                 texto_vendedor_crudo = fila_principal.controls[2].controls[1].value
-                # Limpiamos el prefijo 'Atendido por: ' para quedarnos solo con el nombre en MAYÚSCULAS
                 vendedor = str(texto_vendedor_crudo).replace("Atendido por:", "").strip().upper()
                 if not vendedor:
                     vendedor = "ADMIN"
                 
-                # Fila -> Column (índice 3, los precios) -> Text (índice 0, el precio en '$XX.XX')
+                # Extrae los precios respetando los nuevos layouts
                 texto_precio_crudo = fila_principal.controls[3].controls[0].value
-                # Limpiamos el caracter '$' y convertimos a número flotante
                 monto_usd = float(str(texto_precio_crudo).replace("$", "").strip())
                 
-                # Acumulamos la sumatoria en dólares ($)
                 if vendedor in reporte_sumas:
                     reporte_sumas[vendedor] += monto_usd
                 else:
                     reporte_sumas[vendedor] = monto_usd
-            except Exception as err_lectura:
-                # Si una tarjeta tiene estructura corrupta o está vacía se ignora elegantemente
+            except Exception:
                 continue
 
-                # Creamos las filas visuales dinámicas para nuestro modal
         filas_vendedores_ui = []
         if not reporte_sumas:
             filas_vendedores_ui.append(
@@ -1650,49 +2223,36 @@ def vista_historial_ventas(page: ft.Page):
                             ], spacing=8),
                             ft.Text(f"${total_usd:.2f}", color=ft.Colors.GREEN_700, weight=ft.FontWeight.BOLD, size=14)
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        # SOLUCIÓN AL ERROR: Sintaxis compatible con todas las versiones de Flet
                         padding=ft.Padding(10, 6, 10, 6),
                         border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.GREY_200))
                     )
                 )
 
-
-        # Configuramos y construimos el AlertDialog flotante
-        dialogo_reporte = ft.AlertDialog(
-            title=ft.Row([
-                ft.Icon(ft.Icons.ASSESSMENT_ROUNDED, color=ft.Colors.GREEN_700),
-                ft.Text("Sumatoria de Ventas ($)", size=16, weight=ft.FontWeight.BOLD)
-            ], spacing=10),
-            content=ft.Column(
-                controls=filas_vendedores_ui,
-                tight=True,
-                width=320,
-                scroll=ft.ScrollMode.AUTO
-            ),
-            actions=[
-                ft.TextButton("Cerrar", on_click=lambda _: cerrar_reporte_modal(dialogo_reporte))
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        # REUTILIZACIÓN DEL DIÁLOGO COMÚN PARA EL REPORTE
+        dialogo_comun.title = ft.Row([
+            ft.Icon(ft.Icons.ASSESSMENT_ROUNDED, color=ft.Colors.GREEN_700),
+            ft.Text("Sumatoria de Ventas ($)", size=16, weight=ft.FontWeight.BOLD)
+        ], spacing=10)
+        dialogo_comun.content = ft.Column(
+            controls=filas_vendedores_ui,
+            tight=True,
+            width=320,
+            scroll=ft.ScrollMode.AUTO
         )
-
-        page.overlay.append(dialogo_reporte)
-        dialogo_reporte.open = True
+        dialogo_comun.actions = [
+            #ft.TextButton("Cerrar", on_click=cerrar_cualquier_dialogo)
+        ]
+        dialogo_comun.actions_alignment = ft.MainAxisAlignment.END
+        dialogo_comun.open = True
         page.update()
 
-    def cerrar_reporte_modal(dialogo):
-        dialogo.open = False
-        page.update()
-    # =========================================================================
-
-    # Botón tipo Icono para abrir el reporte sumado en $
     btn_reporte = ft.IconButton(
         icon=ft.Icons.BAR_CHART_ROUNDED,
         icon_color=ft.Colors.GREEN_700,
         tooltip="Ver totales por vendedor",
-        on_click=mostrar_reporte_vendedores_click
+        #on_click=mostrar_reporte_vendedores_click
     )
 
-    import datetime
     picker_historial = ft.DatePicker(
         on_change=al_cambiar_fecha,
         first_date=datetime.datetime(2024, 1, 1),
@@ -1715,7 +2275,7 @@ def vista_historial_ventas(page: ft.Page):
                 
                 # Bloque contenedor de tus botones de acción de filtrado
                 ft.Row([
-                    btn_reporte,
+                    #btn_reporte,
                     btn_fecha_texto, 
                     btn_reset
                 ], 
@@ -1737,6 +2297,7 @@ def vista_historial_ventas(page: ft.Page):
             ft.Text("⚠ Error crítico al cargar la interfaz", size=16, color="red", weight="bold"),
             ft.Text(str(error_general), color="red")
         ])
+
 
 # --- PANTALLA 6: CONFIGURACIÓN GENERAL CON ACCESO A PERSONAL ---
 # --- SUB-INTERFAZ MODAL: GESTIÓN DE PERSONAL (DESLIZANTE PARA MÓVIL) ---
@@ -1862,6 +2423,92 @@ def vista_configuracion(page: ft.Page):
     
     lbl_status = ft.Text("", size=14)
 
+    # --- LOGICA DEL SELECTOR DE EXCEL CORREGIDA ---
+    def al_seleccionar_archivo_excel(e):
+        if not e.files:
+            return
+        
+        ruta_excel = e.files[0].path
+        # Llamamos a tu función de base de datos
+        exito = db_importar_inventario_excel(ruta_excel)
+        
+        # --- CORRECCIÓN PARA FLET 0.86.5 ---
+        if exito:
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text("¡Inventario importado y actualizado con éxito desde Excel!"), 
+                    bgcolor="green"
+                )
+            )
+        else:
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text("Error al procesar el archivo Excel. Revisa el formato."), 
+                    bgcolor="red"
+                )
+            )
+        
+        page.update()
+
+    def ejecutar_carga_masiva_fija(e):
+        import os
+        
+        # 1. Definición estricta de la ruta absoluta
+        try:
+            ruta_actual = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            ruta_actual = os.getcwd()
+            
+        archivo_fijo = os.path.join(ruta_actual, "inventario.xlsx")
+        
+        # 2. Comprobación física del archivo
+        if not os.path.exists(archivo_fijo):
+            # CORRECCIÓN PARA FLET 0.86+: Se despliega usando show_dialog()
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text(f"Falta el archivo en: {archivo_fijo}"), 
+                    bgcolor="orange"
+                )
+            )
+            page.update()
+            return
+            
+        # 3. Procesamiento seguro de datos
+        try:
+            exito = db_importar_inventario_excel(archivo_fijo)
+            if exito:
+                page.show_dialog(
+                    ft.SnackBar(
+                        content=ft.Text("¡Inventario cargado y sumado con éxito desde Excel!"), 
+                        bgcolor="green"
+                    )
+                )
+            else:
+                page.show_dialog(
+                    ft.SnackBar(
+                        content=ft.Text("Error: El archivo no tiene el formato o columnas correctas."), 
+                        bgcolor="red"
+                    )
+                )
+        except Exception as error_lectura:
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text(f"Error crítico en lectura: {error_lectura}"), 
+                    bgcolor="red"
+                )
+            )
+        
+        page.update()
+
+    btn_cargar_excel = ft.ElevatedButton(
+        "Procesar archivo 'inventario.xlsx'",
+        icon=ft.Icons.UPLOAD_FILE_ROUNDED,
+        bgcolor=ft.Colors.GREEN_800,
+        color=ft.Colors.WHITE,
+        on_click=ejecutar_carga_masiva_fija
+    )
+
+  
     def guardar_tasa_click(e):
         try:
             tasa_texto = txt_tasa.value.strip().replace(",", ".")
@@ -1887,6 +2534,42 @@ def vista_configuracion(page: ft.Page):
         color=ft.Colors.WHITE
     )
 
+    # --- NUEVA LÓGICA DE ARCHIVO PARA EL DISEÑO HÍBRIDO (FLET 0.86.5) ---
+    import os
+    ruta_txt_config = "config_vista.txt"
+    if not os.path.exists(ruta_txt_config):
+        with open(ruta_txt_config, "w") as f:
+            f.write("cuadricula")
+
+    texto_boton_vista = ft.Text("", color=ft.Colors.WHITE, weight=ft.FontWeight.W_500)
+
+    def cambiar_diseño_vista(e):
+        with open(ruta_txt_config, "r") as f:
+            actual = f.read().strip()
+        nuevo_modo = "lista" if actual == "cuadricula" else "cuadricula"
+        with open(ruta_txt_config, "w") as f:
+            f.write(nuevo_modo)
+            
+        texto_boton_vista.value = f"Modo Actual: {nuevo_modo.upper()}"
+        btn_cambiar.icon = ft.Icons.LIST_ALT if nuevo_modo == "lista" else ft.Icons.GRID_VIEW
+        
+        # CORREGIDO PARA FLET 0.86.5: Se lanza el SnackBar a la antigua
+        page.snack_bar = ft.SnackBar(ft.Text(f"Diseño cambiado a modo {nuevo_modo}"), bgcolor="green")
+        page.snack_bar.open = True
+        page.update()
+
+    with open(ruta_txt_config, "r") as f:
+        modo_actual = f.read().strip()
+
+    texto_boton_vista.value = f"Modo Actual: {modo_actual.upper()}"
+
+    btn_cambiar = ft.ElevatedButton(
+        content=texto_boton_vista,
+        icon=ft.Icons.GRID_VIEW if modo_actual == "cuadricula" else ft.Icons.LIST_ALT,
+        bgcolor=ft.Colors.BLUE_GREY_800,
+        on_click=cambiar_diseño_vista
+    )
+
     return ft.Column([
         ft.Text("⚙ Panel de Configuración", size=26, weight=ft.FontWeight.BOLD),
         ft.Text("Define los parámetros del sistema y conversión monetaria.", size=14, color=ft.Colors.GREY_700),
@@ -1910,7 +2593,7 @@ def vista_configuracion(page: ft.Page):
         
         ft.Container(height=10),
         
-        # TARJETA 2: ACCESO GRÁFICO AL PERSONAL (NUEVO)
+        # TARJETA 2: ACCESO GRÁFICO AL PERSONAL
         ft.Card(
             ft.Container(
                 content=ft.Column([
@@ -1922,14 +2605,49 @@ def vista_configuracion(page: ft.Page):
                         icon=ft.Icons.MANAGE_ACCOUNTS,
                         bgcolor=ft.Colors.BLUE_GREY_800,
                         color=ft.Colors.WHITE,
-                        on_click=lambda e: abrir_modal_usuarios(page) # Llama a la ventana flotante
+                        on_click=lambda e: abrir_modal_usuarios(page)
                     )
                 ]),
                 padding=15
             ),
             elevation=2
-        )
+        ),
+
+        ft.Container(height=10),
+
+        # NUEVA TARJETA 3: DISEÑO DEL PUNTO DE VENTA
+        ft.Card(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("Diseño del Catálogo de Ventas", weight=ft.FontWeight.BOLD, size=16),
+                    ft.Text("Cambia la forma en que tus vendedores visualizan los productos disponibles.", size=12, color=ft.Colors.GREY_600),
+                    ft.Container(height=5),
+                    btn_cambiar
+                ]),
+                padding=15
+            ),
+            elevation=2
+        ),
+
+
+        #ft.Container(height=10),
+
+        # NUEVA TARJETA 4: IMPORTACIÓN MASIVA DESDE EXCEL
+        #ft.Card(
+            #ft.Container(
+                #content=ft.Column([
+                    #ft.Text("Carga Masiva de Inventario", weight=ft.FontWeight.BOLD, size=16),
+                    #ft.Text("Sube un archivo .xlsx para registrar nuevos productos o sumar stock a los existentes de forma masiva.", size=12, #color=ft.Colors.GREY_600),
+                    #ft.Container(height=5),
+                    #btn_cargar_excel
+                #]),
+                #padding=15
+            #),
+            #elevation=2
+        #)
     ], expand=True, scroll=ft.ScrollMode.ALWAYS)
+
+
 
 
 # =====================================================================
@@ -1949,7 +2667,7 @@ def main(page: ft.Page):
     else:
         RUTA_DB = "sistema_negocio.db"
 
-    inicializar_base_datos()
+    inicializar_base_de_datos()
 
     usuario_estado = {"rol": None, "username": None}
 
@@ -1987,7 +2705,6 @@ def main(page: ft.Page):
             ft.NavigationBarDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="Config."),
         ],
     )
-
     def cambiar_pantalla(e):
         opcion = int(e.control.selected_index)
         menu_lateral.selected_index = opcion
