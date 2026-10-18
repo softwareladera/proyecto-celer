@@ -11,7 +11,7 @@ from datetime import datetime
 # 1. PARTE: CONFIGURACIÓN Y FUNCIONES DE LA BASE DE DATOS (SQLITE)
 # =====================================================================
 
-def inicializar_base_datos():
+def inicializar_base_de_datos():
     """Crea la conexión remota a Turso y las tablas si no existen."""
     # 1. Intentamos leer desde Vercel
     db_url = os.getenv("TURSO_DATABASE_URL")
