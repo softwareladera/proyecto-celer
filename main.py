@@ -2856,5 +2856,5 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8080))
-    # Esta es la sintaxis oficial y limpia para la versión actual de Flet en web
-    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
+    # Eliminamos WEB_BROWSER para que actúe únicamente como servidor web de producción
+    ft.app(target=main, host="0.0.0.0", port=port)
