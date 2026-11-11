@@ -823,7 +823,7 @@ def vista_dashboard(page: ft.Page):
         btn_fecha_fin.text = "Seleccionar Fin"
         refrescar_metricas()
 
-    btn_filtrar = ft.ElevatedButton("Filtrar", icon=ft.Icons.FILTER_ALT, on_click=filtrar_click, bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
+    btn_filtrar = ft.Button("Filtrar", icon=ft.Icons.FILTER_ALT, on_click=filtrar_click, bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
     btn_limpiar = ft.IconButton(icon=ft.Icons.REFRESH, on_click=limpiar_filtro_click, tooltip="Mostrar Histórico Total")
 
     # Carga inicial de datos históricos globales
@@ -905,7 +905,7 @@ def vista_dashboard(page: ft.Page):
         refrescar_reporte_flotante(fecha_reporte_val)
 
     # Botón disparador del reporte
-    btn_abrir_reporte = ft.ElevatedButton(
+    btn_abrir_reporte = ft.Button(
         "📊 Ver Utilidad y Cierre", 
         icon=ft.Icons.INSERT_CHART_OUTLINED_ROUNDED, 
         on_click=abrir_modal_reporte, 
@@ -1187,7 +1187,7 @@ def vista_inventario(page: ft.Page):
         dialogo_comun_inv.content = ft.Text(f"¿De verdad deseas borrar '{nombre_p}' del inventario?")
         dialogo_comun_inv.actions = [
             ft.TextButton("Cancelar", on_click=cerrar_dialogo_inv),
-            ft.ElevatedButton(content=ft.Text("Eliminar"), bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=confirmar),
+            ft.Button(content=ft.Text("Eliminar"), bgcolor=ft.Colors.RED, color=ft.Colors.WHITE, on_click=confirmar),
         ]
         dialogo_comun_inv.actions_alignment = ft.MainAxisAlignment.END
         dialogo_comun_inv.open = True
@@ -1313,7 +1313,7 @@ def vista_inventario(page: ft.Page):
     # =========================================================================
     # DEFINICIÓN DE CONTROLES DE ACCIÓN (Tu Bloque 7)
     # =========================================================================
-    btn_guardar = ft.ElevatedButton(
+    btn_guardar = ft.Button(
         content=ft.Text("Añadir"), 
         icon=ft.Icons.ADD, 
         on_click=guardar_click, 
@@ -1360,7 +1360,7 @@ def vista_inventario(page: ft.Page):
 
 
 
-    btn_guardar = ft.ElevatedButton(
+    btn_guardar = ft.Button(
         content=ft.Text("Añadir"), 
         icon=ft.Icons.ADD, 
         on_click=guardar_click, 
@@ -1574,7 +1574,7 @@ def vista_ventas(page: ft.Page):
             dialogo_peso.content = ft.Column([ft.Text(f"Disponible: {p_stock:.3f} Kg"), txt_peso_entrada], tight=True, width=300)
             dialogo_peso.actions = [
                 ft.TextButton("Cancelar", on_click=lambda e: cerrar_dialogo_peso() or forzar_foco_absoluto()), 
-                ft.ElevatedButton("Agregar", on_click=guardar_peso)
+                ft.Button("Agregar", on_click=guardar_peso)
             ]
             dialogo_peso.open = True
             page.update()
@@ -1597,8 +1597,8 @@ def vista_ventas(page: ft.Page):
             dialogo_peso.title = ft.Text("Seleccione Presentación")
             dialogo_peso.content = ft.Text(f"¿Cómo desea vender {p_nombre}?")
             dialogo_peso.actions = [
-                ft.ElevatedButton("Detalle", on_click=comprar_como_detalle), 
-                ft.ElevatedButton("Caja", on_click=comprar_como_caja)
+                ft.Button("Detalle", on_click=comprar_como_detalle), 
+                ft.Button("Caja", on_click=comprar_como_caja)
             ]
             dialogo_peso.open = True
             page.update()
@@ -1750,14 +1750,14 @@ def vista_ventas(page: ft.Page):
                 ejecutar_registro(ref)
             dialogo_referencia.actions = [
                 ft.TextButton("Cancelar", on_click=cerrar_dialogo_referencia), 
-                ft.ElevatedButton("Confirmar", on_click=guardar_con_referencia)
+                ft.Button("Confirmar", on_click=guardar_con_referencia)
             ]
             dialogo_referencia.open = True
             page.update()
         else: 
             ejecutar_registro("")
 
-    btn_cobrar = ft.ElevatedButton(
+    btn_cobrar = ft.Button(
         "✓ Cobrar Venta", 
         icon=ft.Icons.CHECK, 
         bgcolor=ft.Colors.GREEN_700, 
@@ -1874,7 +1874,7 @@ def vista_caja(page: ft.Page):
             ))
 
     # 2º CREAMOS EL BOTÓN (Ahora sí encuentra 'registrar_movimiento' sin problemas)
-    btn_registrar = ft.ElevatedButton(
+    btn_registrar = ft.Button(
         "Registrar Movimiento", 
         on_click=registrar_movimiento, 
         bgcolor=ft.Colors.BLUE, 
@@ -2001,7 +2001,7 @@ def vista_historial_ventas(page: ft.Page):
             )
             dialogo_comun.actions = [
                 ft.TextButton("Cancelar", on_click=cerrar_cualquier_dialogo),
-                ft.ElevatedButton("Sí, eliminar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_eliminacion)
+                ft.Button("Sí, eliminar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_eliminacion)
             ]
             dialogo_comun.actions_alignment = ft.MainAxisAlignment.END
             dialogo_comun.open = True
@@ -2028,7 +2028,7 @@ def vista_historial_ventas(page: ft.Page):
                 dialogo_comun.content = ft.Text(f"¿Deseas quitar la verificación del Folio {folio_str}? Volverá a marcarse como pendiente.")
                 dialogo_comun.actions = [
                     ft.TextButton("Cancelar", on_click=cancelar_destildar),
-                    ft.ElevatedButton("Sí, quitar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_destildar)
+                    ft.Button("Sí, quitar", bgcolor=ft.Colors.RED_600, color=ft.Colors.WHITE, on_click=confirmar_destildar)
                 ]
                 dialogo_comun.actions_alignment = ft.MainAxisAlignment.END
                 dialogo_comun.open = True
@@ -2137,7 +2137,7 @@ def vista_historial_ventas(page: ft.Page):
 
     texto_boton_fecha = ft.Text("Seleccionar Día", size=13, weight=ft.FontWeight.W_500)
 
-    btn_fecha_texto = ft.ElevatedButton(
+    btn_fecha_texto = ft.Button(
         content=texto_boton_fecha,
         icon="calendar_month",
         on_click=lambda _: page.show_dialog(picker_historial) if hasattr(page, "show_dialog") else page.open(picker_historial)
@@ -2367,7 +2367,7 @@ def abrir_modal_usuarios(page: ft.Page):
             txt_new_pass.value = ""
             refrescar_lista_usuarios()
 
-    btn_crear = ft.ElevatedButton(
+    btn_crear = ft.Button(
         "Registrar", 
         icon=ft.Icons.PERSON_ADD, 
         on_click=registrar_usuario_click,
@@ -2500,7 +2500,7 @@ def vista_configuracion(page: ft.Page):
         
         page.update()
 
-    btn_cargar_excel = ft.ElevatedButton(
+    btn_cargar_excel = ft.Button(
         "Procesar archivo 'inventario.xlsx'",
         icon=ft.Icons.UPLOAD_FILE_ROUNDED,
         bgcolor=ft.Colors.GREEN_800,
@@ -2526,7 +2526,7 @@ def vista_configuracion(page: ft.Page):
             lbl_status.color = ft.Colors.RED
         page.update()
 
-    btn_guardar_tasa = ft.ElevatedButton(
+    btn_guardar_tasa = ft.Button(
         "Actualizar Tasa", 
         icon=ft.Icons.SAVE, 
         on_click=guardar_tasa_click,
@@ -2563,7 +2563,7 @@ def vista_configuracion(page: ft.Page):
 
     texto_boton_vista.value = f"Modo Actual: {modo_actual.upper()}"
 
-    btn_cambiar = ft.ElevatedButton(
+    btn_cambiar = ft.Button(
         content=texto_boton_vista,
         icon=ft.Icons.GRID_VIEW if modo_actual == "cuadricula" else ft.Icons.LIST_ALT,
         bgcolor=ft.Colors.BLUE_GREY_800,
@@ -2600,7 +2600,7 @@ def vista_configuracion(page: ft.Page):
                     ft.Text("Seguridad y Empleados", weight=ft.FontWeight.BOLD, size=16),
                     ft.Text("Crea nuevos perfiles para tus vendedores o da de baja cuentas existentes.", size=12, color=ft.Colors.GREY_600),
                     ft.Container(height=5),
-                    ft.ElevatedButton(
+                    ft.Button(
                         "Administrar Personal",
                         icon=ft.Icons.MANAGE_ACCOUNTS,
                         bgcolor=ft.Colors.BLUE_GREY_800,
@@ -2810,7 +2810,7 @@ def main(page: ft.Page):
             lbl_error.value = "Usuario o contraseña incorrectos."
             page.update()
 
-    btn_entrar = ft.ElevatedButton(
+    btn_entrar = ft.Button(
         "Ingresar al Sistema", 
         on_click=intentar_login, 
         bgcolor=ft.Colors.BLUE_800, 
